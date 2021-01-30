@@ -417,6 +417,8 @@ impl Icons {
 		m.insert("zsh", "\u{f489}"); // ""
 		m.insert("zsh-theme", "\u{f489}"); // ""
 		m.insert("zshrc", "\u{f489}"); // ""
+
+        m
    }
 }
 
