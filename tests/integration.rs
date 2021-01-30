@@ -103,10 +103,10 @@ fn test_list_inode_populated_directory() {
     dir.child("one").touch().unwrap();
     dir.child("two").touch().unwrap();
 
-    #[cfg(unix)]
-    let matched = "\\d+ one\n\\d+ two\n$";
     #[cfg(windows)]
     let matched = "- one\n\\- two\n$";
+    #[cfg(unix)]
+    let matched = "\\d+ +one\n\\d+ +two\n$";
 
     cmd()
         .arg("--inode")
@@ -128,10 +128,10 @@ fn test_list_block_inode_populated_directory_without_long() {
     dir.child("one").touch().unwrap();
     dir.child("two").touch().unwrap();
 
-    #[cfg(unix)]
-    let matched = "one\ntwo\n$";
     #[cfg(windows)]
-    let matched = "one\ntwo\n$";
+    let matched = "- one\n\\- two\n$";
+    #[cfg(unix)]
+    let matched = "\\d+ +one\n\\d+ +two\n$";
 
     cmd()
         .arg("--blocks")
@@ -148,10 +148,10 @@ fn test_list_block_inode_populated_directory_with_long() {
     dir.child("one").touch().unwrap();
     dir.child("two").touch().unwrap();
 
-    #[cfg(unix)]
-    let matched = "\\d+ one\n\\d+ two\n$";
     #[cfg(windows)]
     let matched = "- one\n\\- two\n$";
+    #[cfg(unix)]
+    let matched = "\\d+ +one\n\\d+ +two\n$";
 
     cmd()
         .arg("--long")
@@ -362,7 +362,6 @@ fn test_version_sort_overwrite_by_sizesort() {
         .stdout(predicate::str::is_match("11\n2\n$").unwrap());
 }
 
-#[cfg(test)]
 #[cfg(target_os = "linux")]
 fn bad_utf8(tmp: &std::path::Path, pre: &str, suf: &str) -> String {
     let mut fname = format!("{}/{}", tmp.display(), pre).into_bytes();
@@ -401,10 +400,106 @@ fn test_bad_utf_8_name() {
         .stdout(predicate::str::is_match("bad-name\u{fffd}\u{fffd}.ext\n$").unwrap());
 }
 
+#[test]
+fn test_tree() {
+    let tmp = tempdir();
+    tmp.child("one").touch().unwrap();
+    tmp.child("one.d").create_dir_all().unwrap();
+    tmp.child("one.d/two").touch().unwrap();
+
+    cmd()
+        .arg(tmp.path())
+        .arg("--tree")
+        .assert()
+        .stdout(predicate::str::is_match("├── one\n└── one.d\n   └── two\n$").unwrap());
+}
+
+#[test]
+fn test_tree_d() {
+    let tmp = tempdir();
+    tmp.child("one").touch().unwrap();
+    tmp.child("two").touch().unwrap();
+    tmp.child("one.d").create_dir_all().unwrap();
+    tmp.child("one.d/one").touch().unwrap();
+    tmp.child("one.d/one.d").create_dir_all().unwrap();
+    tmp.child("two.d").create_dir_all().unwrap();
+
+    cmd()
+        .arg(tmp.path())
+        .arg("--tree")
+        .arg("-d")
+        .assert()
+        .stdout(predicate::str::is_match("├── one.d\n│  └── one.d\n└── two.d\n$").unwrap());
+}
+
 fn cmd() -> Command {
     Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap()
 }
 
 fn tempdir() -> assert_fs::TempDir {
     assert_fs::TempDir::new().unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn test_lower_case_name_icon_match() {
+    let dir = tempdir();
+    dir.child(".trash").touch().unwrap();
+    let test_file = dir.path().join(".trash");
+
+    cmd()
+        .arg("--icon")
+        .arg("always")
+        .arg("--ignore-config")
+        .arg(test_file)
+        .assert()
+        .stdout(predicate::str::contains("\u{f1f8}"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_upper_case_name_icon_match() {
+    let dir = tempdir();
+    dir.child(".TRASH").touch().unwrap();
+    let test_file = dir.path().join(".TRASH");
+
+    cmd()
+        .arg("--icon")
+        .arg("always")
+        .arg("--ignore-config")
+        .arg(test_file)
+        .assert()
+        .stdout(predicate::str::contains("\u{f1f8}"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_lower_case_ext_icon_match() {
+    let dir = tempdir();
+    dir.child("test.7z").touch().unwrap();
+    let test_file = dir.path().join("test.7z");
+
+    cmd()
+        .arg("--icon")
+        .arg("always")
+        .arg("--ignore-config")
+        .arg(test_file)
+        .assert()
+        .stdout(predicate::str::contains("\u{f410}"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_upper_case_ext_icon_match() {
+    let dir = tempdir();
+    dir.child("test.7Z").touch().unwrap();
+    let test_file = dir.path().join("test.7Z");
+
+    cmd()
+        .arg("--icon")
+        .arg("always")
+        .arg("--ignore-config")
+        .arg(test_file)
+        .assert()
+        .stdout(predicate::str::contains("\u{f410}"));
 }

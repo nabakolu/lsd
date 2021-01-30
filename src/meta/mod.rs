@@ -54,7 +54,7 @@ impl Meta {
             return Ok(None);
         }
 
-        if flags.display == Display::DirectoryItself {
+        if flags.display == Display::DirectoryOnly && flags.layout != Layout::Tree {
             return Ok(None);
         }
 
@@ -71,7 +71,7 @@ impl Meta {
         let entries = match self.path.read_dir() {
             Ok(entries) => entries,
             Err(err) => {
-                print_error!("lsd: {}: {}\n", self.path.display(), err);
+                print_error!("{}: {}.", self.path.display(), err);
                 return Ok(None);
             }
         };
@@ -92,7 +92,8 @@ impl Meta {
         }
 
         for entry in entries {
-            let path = entry?.path();
+            let entry = entry?;
+            let path = entry.path();
 
             let name = path
                 .file_name()
@@ -102,7 +103,7 @@ impl Meta {
                 continue;
             }
 
-            if let Display::DisplayOnlyVisible = flags.display {
+            if let Display::VisibleOnly = flags.display {
                 if name.to_string_lossy().starts_with('.') {
                     continue;
                 }
@@ -111,15 +112,24 @@ impl Meta {
             let mut entry_meta = match Self::from_path(&path, flags.dereference.0) {
                 Ok(res) => res,
                 Err(err) => {
-                    print_error!("lsd: {}: {}\n", path.display(), err);
+                    print_error!("{}: {}.", path.display(), err);
                     continue;
                 }
             };
 
+            // skip files for --tree -d
+            if flags.layout == Layout::Tree {
+                if let Display::DirectoryOnly = flags.display {
+                    if !entry.file_type()?.is_dir() {
+                        continue;
+                    }
+                }
+            }
+
             match entry_meta.recurse_into(depth - 1, &flags) {
                 Ok(content) => entry_meta.content = content,
                 Err(err) => {
-                    print_error!("lsd: {}: {}\n", path.display(), err);
+                    print_error!("{}: {}.", path.display(), err);
                     continue;
                 }
             };
@@ -157,7 +167,7 @@ impl Meta {
         let metadata = match metadata {
             Ok(meta) => meta,
             Err(err) => {
-                print_error!("lsd: {}: {}\n", path.display(), err);
+                print_error!("{}: {}.", path.display(), err);
                 return 0;
             }
         };
@@ -170,7 +180,7 @@ impl Meta {
             let entries = match path.read_dir() {
                 Ok(entries) => entries,
                 Err(err) => {
-                    print_error!("lsd: {}: {}\n", path.display(), err);
+                    print_error!("{}: {}.", path.display(), err);
                     return size;
                 }
             };
@@ -178,7 +188,7 @@ impl Meta {
                 let path = match entry {
                     Ok(entry) => entry.path(),
                     Err(err) => {
-                        print_error!("lsd: {}: {}\n", path.display(), err);
+                        print_error!("{}: {}.", path.display(), err);
                         continue;
                     }
                 };

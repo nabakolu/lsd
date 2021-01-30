@@ -61,7 +61,7 @@ fn inner_display_grid(
     // The first iteration (depth == 0) corresponds to the inputs given by the
     // user. We defer displaying directories given by the user unless we've been
     // asked to display the directory itself (rather than its contents).
-    let skip_dirs = (depth == 0) && (flags.display != Display::DirectoryItself);
+    let skip_dirs = (depth == 0) && (flags.display != Display::DirectoryOnly);
 
     // print the files first.
     for meta in metas {
@@ -286,7 +286,7 @@ fn get_output<'a>(
                         ANSIStrings(&[
                             meta.name.render(colors, icons, &display_option),
                             meta.indicator.render(&flags),
-                            meta.symlink.render(colors),
+                            meta.symlink.render(colors, &flags),
                         ])
                         .to_string()
                     };
@@ -372,7 +372,7 @@ mod tests {
             );
             let output = name.render(
                 &Colors::new(color::Theme::NoColor),
-                &Icons::new(icon::Theme::NoIcon),
+                &Icons::new(icon::Theme::NoIcon, " ".to_string()),
                 &DisplayOption::FileName,
             );
 
@@ -404,7 +404,7 @@ mod tests {
             let output = name
                 .render(
                     &Colors::new(color::Theme::NoColor),
-                    &Icons::new(icon::Theme::Fancy),
+                    &Icons::new(icon::Theme::Fancy, " ".to_string()),
                     &DisplayOption::FileName,
                 )
                 .to_string();
@@ -436,7 +436,7 @@ mod tests {
             let output = name
                 .render(
                     &Colors::new(color::Theme::NoLscolors),
-                    &Icons::new(icon::Theme::NoIcon),
+                    &Icons::new(icon::Theme::NoIcon, " ".to_string()),
                     &DisplayOption::FileName,
                 )
                 .to_string();
@@ -472,7 +472,7 @@ mod tests {
             let output = name
                 .render(
                     &Colors::new(color::Theme::NoColor),
-                    &Icons::new(icon::Theme::NoIcon),
+                    &Icons::new(icon::Theme::NoIcon, " ".to_string()),
                     &DisplayOption::FileName,
                 )
                 .to_string();

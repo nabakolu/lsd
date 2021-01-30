@@ -10,6 +10,7 @@ pub mod layout;
 pub mod recursion;
 pub mod size;
 pub mod sorting;
+pub mod symlink_arrow;
 pub mod symlinks;
 pub mod total_size;
 
@@ -21,6 +22,7 @@ pub use date::DateFlag;
 pub use dereference::Dereference;
 pub use display::Display;
 pub use icons::IconOption;
+pub use icons::IconSeparator;
 pub use icons::IconTheme;
 pub use icons::Icons;
 pub use ignore_globs::IgnoreGlobs;
@@ -32,6 +34,7 @@ pub use sorting::DirGrouping;
 pub use sorting::SortColumn;
 pub use sorting::SortOrder;
 pub use sorting::Sorting;
+pub use symlink_arrow::SymlinkArrow;
 pub use symlinks::NoSymlink;
 pub use total_size::TotalSize;
 
@@ -59,6 +62,7 @@ pub struct Flags {
     pub size: SizeFlag,
     pub sorting: Sorting,
     pub total_size: TotalSize,
+    pub symlink_arrow: SymlinkArrow,
 }
 
 impl Flags {
@@ -84,6 +88,7 @@ impl Flags {
             recursion: Recursion::configure_from(matches, config)?,
             sorting: Sorting::configure_from(matches, config),
             total_size: TotalSize::configure_from(matches, config),
+            symlink_arrow: SymlinkArrow::configure_from(matches, config),
         })
     }
 }
@@ -94,9 +99,10 @@ pub trait Configurable<T>
 where
     T: std::default::Default,
 {
-    /// Returns a value from either [ArgMatches], a [Config] or a [Default] value. The first value
-    /// that is not [None] is used. The order of precedence for the value used is:
+    /// Returns a value from either [ArgMatches], a [Config], a [Default] or the environment value.
+    /// The first value that is not [None] is used. The order of precedence for the value used is:
     /// - [from_arg_matches](Configurable::from_arg_matches)
+    /// - [from_environment](Configurable::from_environment)
     /// - [from_config](Configurable::from_config)
     /// - [Default::default]
     ///
@@ -105,17 +111,19 @@ where
     /// The configuration file's Yaml is read in any case, to be able to check for errors and print
     /// out warnings.
     fn configure_from(matches: &ArgMatches, config: &Config) -> T {
-        let mut result: T = Default::default();
+        if let Some(value) = Self::from_arg_matches(matches) {
+            return value;
+        }
+
+        if let Some(value) = Self::from_environment() {
+            return value;
+        }
 
         if let Some(value) = Self::from_config(config) {
-            result = value;
+            return value;
         }
 
-        if let Some(value) = Self::from_arg_matches(matches) {
-            result = value;
-        }
-
-        result
+        Default::default()
     }
 
     /// The method to implement the value fetching from command line parameters.
@@ -124,4 +132,9 @@ where
     /// The method to implement the value fetching from a configuration file. This should return
     /// [None], if the [Config] does not have a [Yaml].
     fn from_config(config: &Config) -> Option<T>;
+
+    /// The method to implement the value fetching from environment variables.
+    fn from_environment() -> Option<T> {
+        None
+    }
 }

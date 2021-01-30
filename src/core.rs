@@ -51,6 +51,8 @@ impl Core {
             (_, _, IconTheme::Unicode) => icon::Theme::Unicode,
         };
 
+        let icon_separator = flags.icons.separator.0.clone();
+
         if !tty_available {
             // The output is not a tty, this means the command is piped. (ex: lsd -l | less)
             //
@@ -65,7 +67,7 @@ impl Core {
             flags,
             //display: Display::new(inner_flags),
             colors: Colors::new(color_theme),
-            icons: Icons::new(icon_theme),
+            icons: Icons::new(icon_theme, icon_separator),
             sorters,
         }
     }
@@ -89,27 +91,26 @@ impl Core {
             let mut meta = match Meta::from_path(&path, self.flags.dereference.0) {
                 Ok(meta) => meta,
                 Err(err) => {
-                    print_error!("lsd: {}: {}\n", path.display(), err);
+                    print_error!("{}: {}.", path.display(), err);
                     continue;
                 }
             };
 
-            match self.flags.display {
-                Display::DirectoryItself => {
-                    meta_list.push(meta);
-                }
-                _ => {
-                    match meta.recurse_into(depth, &self.flags) {
-                        Ok(content) => {
-                            meta.content = content;
-                            meta_list.push(meta);
-                        }
-                        Err(err) => {
-                            print_error!("lsd: {}: {}\n", path.display(), err);
-                            continue;
-                        }
-                    };
-                }
+            let recurse =
+                self.flags.layout == Layout::Tree || self.flags.display != Display::DirectoryOnly;
+            if recurse {
+                match meta.recurse_into(depth, &self.flags) {
+                    Ok(content) => {
+                        meta.content = content;
+                        meta_list.push(meta);
+                    }
+                    Err(err) => {
+                        print_error!("lsd: {}: {}\n", path.display(), err);
+                        continue;
+                    }
+                };
+            } else {
+                meta_list.push(meta);
             };
         }
         if self.flags.total_size.0 {
