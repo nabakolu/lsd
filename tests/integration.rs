@@ -98,6 +98,21 @@ fn test_list_all_populated_directory() {
 }
 
 #[test]
+fn test_almost_sort_with_folder() {
+    let tmp = tempdir();
+    tmp.child("z").create_dir_all().unwrap();
+    tmp.child("z/a").touch().unwrap();
+
+    cmd()
+        .current_dir(tmp.path())
+        .arg("-a")
+        .arg("--ignore-config")
+        .arg("z")
+        .assert()
+        .stdout(predicate::str::is_match("\\.\n\\.\\.\na\n$").unwrap());
+}
+
+#[test]
 fn test_list_inode_populated_directory() {
     let dir = tempdir();
     dir.child("one").touch().unwrap();
@@ -412,6 +427,24 @@ fn test_tree() {
         .arg("--tree")
         .assert()
         .stdout(predicate::str::is_match("├── one\n└── one.d\n   └── two\n$").unwrap());
+}
+
+#[test]
+fn test_tree_all_not_show_self() {
+    let tmp = tempdir();
+    tmp.child("one").touch().unwrap();
+    tmp.child("one.d").create_dir_all().unwrap();
+    tmp.child("one.d/two").touch().unwrap();
+    tmp.child("one.d/.hidden").touch().unwrap();
+
+    cmd()
+        .arg(tmp.path())
+        .arg("--tree")
+        .arg("--all")
+        .assert()
+        .stdout(
+            predicate::str::is_match("├── one\n└── one.d\n   ├── .hidden\n   └── two\n$").unwrap(),
+        );
 }
 
 #[test]

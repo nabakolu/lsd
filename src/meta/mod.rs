@@ -2,6 +2,7 @@ mod date;
 mod filetype;
 mod indicator;
 mod inode;
+mod links;
 pub mod name;
 mod owner;
 mod permissions;
@@ -15,6 +16,7 @@ pub use self::date::Date;
 pub use self::filetype::FileType;
 pub use self::indicator::Indicator;
 pub use self::inode::INode;
+pub use self::links::Links;
 pub use self::name::Name;
 pub use self::owner::Owner;
 pub use self::permissions::Permissions;
@@ -41,6 +43,7 @@ pub struct Meta {
     pub symlink: SymLink,
     pub indicator: Indicator,
     pub inode: INode,
+    pub links: Links,
     pub content: Option<Vec<Meta>>,
 }
 
@@ -78,14 +81,15 @@ impl Meta {
 
         let mut content: Vec<Meta> = Vec::new();
 
-        if let Display::All = flags.display {
+        if Display::All == flags.display && flags.layout != Layout::Tree {
             let mut current_meta;
 
             current_meta = self.clone();
             current_meta.name.name = ".".to_owned();
 
-            let parent_meta =
+            let mut parent_meta =
                 Self::from_path(&self.path.join(Component::ParentDir), flags.dereference.0)?;
+            parent_meta.name.name = "..".to_owned();
 
             content.push(current_meta);
             content.push(parent_meta);
@@ -219,9 +223,11 @@ impl Meta {
         let file_type = FileType::new(&metadata, symlink_meta.as_ref(), &permissions);
         let name = Name::new(&path, file_type);
         let inode = INode::from(&metadata);
+        let links = Links::from(&metadata);
 
         Ok(Self {
             inode,
+            links,
             path: path.to_path_buf(),
             symlink: SymLink::from(path),
             size: Size::from(&metadata),
