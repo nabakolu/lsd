@@ -1,3 +1,4 @@
+mod access_control;
 mod date;
 mod filetype;
 mod indicator;
@@ -12,6 +13,7 @@ mod symlink;
 #[cfg(windows)]
 mod windows_utils;
 
+pub use self::access_control::AccessControl;
 pub use self::date::Date;
 pub use self::filetype::FileType;
 pub use self::indicator::Indicator;
@@ -27,8 +29,7 @@ pub use crate::icon::Icons;
 use crate::flags::{Display, Flags, Layout};
 use crate::print_error;
 
-use std::fs::read_link;
-use std::io::{Error, ErrorKind};
+use std::io::{self, Error, ErrorKind};
 use std::path::{Component, Path, PathBuf};
 
 #[derive(Clone, Debug)]
@@ -45,14 +46,11 @@ pub struct Meta {
     pub inode: INode,
     pub links: Links,
     pub content: Option<Vec<Meta>>,
+    pub access_control: AccessControl,
 }
 
 impl Meta {
-    pub fn recurse_into(
-        &self,
-        depth: usize,
-        flags: &Flags,
-    ) -> Result<Option<Vec<Meta>>, std::io::Error> {
+    pub fn recurse_into(&self, depth: usize, flags: &Flags) -> io::Result<Option<Vec<Meta>>> {
         if depth == 0 {
             return Ok(None);
         }
@@ -82,9 +80,7 @@ impl Meta {
         let mut content: Vec<Meta> = Vec::new();
 
         if Display::All == flags.display && flags.layout != Layout::Tree {
-            let mut current_meta;
-
-            current_meta = self.clone();
+            let mut current_meta = self.clone();
             current_meta.name.name = ".".to_owned();
 
             let mut parent_meta =
@@ -103,14 +99,12 @@ impl Meta {
                 .file_name()
                 .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "invalid file name"))?;
 
-            if flags.ignore_globs.0.is_match(&name) {
+            if flags.ignore_globs.0.is_match(name) {
                 continue;
             }
 
-            if let Display::VisibleOnly = flags.display {
-                if name.to_string_lossy().starts_with('.') {
-                    continue;
-                }
+            if flags.display == Display::VisibleOnly && name.to_string_lossy().starts_with('.') {
+                continue;
             }
 
             let mut entry_meta = match Self::from_path(&path, flags.dereference.0) {
@@ -122,21 +116,23 @@ impl Meta {
             };
 
             // skip files for --tree -d
-            if flags.layout == Layout::Tree {
-                if let Display::DirectoryOnly = flags.display {
-                    if !entry.file_type()?.is_dir() {
-                        continue;
-                    }
-                }
+            if flags.layout == Layout::Tree
+                && flags.display == Display::DirectoryOnly
+                && !entry.file_type()?.is_dir()
+            {
+                continue;
             }
 
-            match entry_meta.recurse_into(depth - 1, &flags) {
-                Ok(content) => entry_meta.content = content,
-                Err(err) => {
-                    print_error!("{}: {}.", path.display(), err);
-                    continue;
-                }
-            };
+            // check dereferencing
+            if flags.dereference.0 || !matches!(entry_meta.file_type, FileType::SymLink { .. }) {
+                match entry_meta.recurse_into(depth - 1, flags) {
+                    Ok(content) => entry_meta.content = content,
+                    Err(err) => {
+                        print_error!("{}: {}.", path.display(), err);
+                        continue;
+                    }
+                };
+            }
 
             content.push(entry_meta);
         }
@@ -160,14 +156,8 @@ impl Meta {
         }
     }
 
-    fn calculate_total_file_size(path: &PathBuf) -> u64 {
-        let metadata = if read_link(&path).is_ok() {
-            // If the file is a link, retrieve the metadata without following
-            // the link.
-            path.symlink_metadata()
-        } else {
-            path.metadata()
-        };
+    fn calculate_total_file_size(path: &Path) -> u64 {
+        let metadata = path.symlink_metadata();
         let metadata = match metadata {
             Ok(meta) => meta,
             Err(err) => {
@@ -204,13 +194,27 @@ impl Meta {
         }
     }
 
-    pub fn from_path(path: &Path, dereference: bool) -> Result<Self, std::io::Error> {
-        // If the file is a link then retrieve link metadata instead with target metadata (if present).
-        let (metadata, symlink_meta) = if read_link(path).is_ok() && !dereference {
-            (path.symlink_metadata()?, path.metadata().ok())
-        } else {
-            (path.metadata()?, None)
-        };
+    pub fn from_path(path: &Path, dereference: bool) -> io::Result<Self> {
+        let mut metadata = path.symlink_metadata()?;
+        let mut symlink_meta = None;
+        if metadata.file_type().is_symlink() {
+            match path.metadata() {
+                Ok(m) => {
+                    if dereference {
+                        metadata = m;
+                    } else {
+                        symlink_meta = Some(m);
+                    }
+                }
+                Err(e) => {
+                    // This case, it is definitely a symlink or
+                    // path.symlink_metadata would have errored out
+                    if dereference {
+                        return Err(e);
+                    }
+                }
+            }
+        }
 
         #[cfg(unix)]
         let owner = Owner::from(&metadata);
@@ -218,10 +222,11 @@ impl Meta {
         let permissions = Permissions::from(&metadata);
 
         #[cfg(windows)]
-        let (owner, permissions) = windows_utils::get_file_data(&path)?;
+        let (owner, permissions) = windows_utils::get_file_data(path)?;
 
+        let access_control = AccessControl::for_path(path);
         let file_type = FileType::new(&metadata, symlink_meta.as_ref(), &permissions);
-        let name = Name::new(&path, file_type);
+        let name = Name::new(path, file_type);
         let inode = INode::from(&metadata);
         let links = Links::from(&metadata);
 
@@ -238,6 +243,20 @@ impl Meta {
             name,
             file_type,
             content: None,
+            access_control,
         })
+    }
+}
+
+#[cfg(unix)]
+#[cfg(test)]
+mod tests {
+    use super::Meta;
+
+    #[test]
+    fn test_from_path_path() {
+        let dir = assert_fs::TempDir::new().unwrap();
+        let meta = Meta::from_path(dir.path(), false).unwrap();
+        assert_eq!(meta.path, dir.path())
     }
 }

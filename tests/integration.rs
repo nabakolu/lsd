@@ -265,6 +265,30 @@ fn test_dereference_link_right_type_and_no_link() {
 
 #[cfg(unix)]
 #[test]
+fn test_dereference_link_broken_link() {
+    let dir = tempdir();
+    let link = dir.path().join("link");
+    fs::symlink("target", &link).unwrap();
+
+    cmd()
+        .arg("-l")
+        .arg("--dereference")
+        .arg("--ignore-config")
+        .arg(&link)
+        .assert()
+        .stderr(predicate::str::contains("No such file or directory"));
+
+    cmd()
+        .arg("-l")
+        .arg("-L")
+        .arg("--ignore-config")
+        .arg(link)
+        .assert()
+        .stderr(predicate::str::contains("No such file or directory"));
+}
+
+#[cfg(unix)]
+#[test]
 fn test_show_folder_content_of_symlink() {
     let dir = tempdir();
     dir.child("target").child("inside").touch().unwrap();
@@ -397,6 +421,7 @@ fn test_bad_utf_8_extension() {
 
     cmd()
         .arg(tmp.path())
+        .arg("--ignore-config")
         .assert()
         .stdout(predicate::str::is_match("bad.extension\u{fffd}\u{fffd}\n$").unwrap());
 }
@@ -411,6 +436,7 @@ fn test_bad_utf_8_name() {
 
     cmd()
         .arg(tmp.path())
+        .arg("--ignore-config")
         .assert()
         .stdout(predicate::str::is_match("bad-name\u{fffd}\u{fffd}.ext\n$").unwrap());
 }
@@ -425,8 +451,9 @@ fn test_tree() {
     cmd()
         .arg(tmp.path())
         .arg("--tree")
+        .arg("--ignore-config")
         .assert()
-        .stdout(predicate::str::is_match("├── one\n└── one.d\n   └── two\n$").unwrap());
+        .stdout(predicate::str::is_match("├── one\n└── one.d\n    └── two\n$").unwrap());
 }
 
 #[test]
@@ -441,10 +468,27 @@ fn test_tree_all_not_show_self() {
         .arg(tmp.path())
         .arg("--tree")
         .arg("--all")
+        .arg("--ignore-config")
         .assert()
         .stdout(
-            predicate::str::is_match("├── one\n└── one.d\n   ├── .hidden\n   └── two\n$").unwrap(),
+            predicate::str::is_match("├── one\n└── one.d\n    ├── .hidden\n    └── two\n$")
+                .unwrap(),
         );
+}
+
+#[test]
+fn test_tree_show_edge_before_name() {
+    let tmp = tempdir();
+    tmp.child("one.d").create_dir_all().unwrap();
+    tmp.child("one.d/two").touch().unwrap();
+
+    cmd()
+        .arg(tmp.path())
+        .arg("--tree")
+        .arg("--long")
+        .arg("--ignore-config")
+        .assert()
+        .stdout(predicate::str::is_match("└── two\n$").unwrap());
 }
 
 #[test]
@@ -461,8 +505,51 @@ fn test_tree_d() {
         .arg(tmp.path())
         .arg("--tree")
         .arg("-d")
+        .arg("--ignore-config")
         .assert()
-        .stdout(predicate::str::is_match("├── one.d\n│  └── one.d\n└── two.d\n$").unwrap());
+        .stdout(predicate::str::is_match("├── one.d\n│   └── one.d\n└── two.d\n$").unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn test_tree_no_dereference() {
+    let tmp = tempdir();
+    tmp.child("one.d").create_dir_all().unwrap();
+    tmp.child("one.d/samplefile").touch().unwrap();
+    let link = tmp.path().join("link");
+    fs::symlink("one.d", &link).unwrap();
+
+    cmd()
+        .arg("--tree")
+        .arg("--ignore-config")
+        .arg(tmp.path())
+        .assert()
+        .stdout(
+            predicate::str::is_match("├── link ⇒ one.d\n└── one.d\n    └── samplefile\n$").unwrap(),
+        );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_tree_dereference() {
+    let tmp = tempdir();
+    tmp.child("one.d").create_dir_all().unwrap();
+    tmp.child("one.d/samplefile").touch().unwrap();
+    let link = tmp.path().join("link");
+    fs::symlink("one.d", &link).unwrap();
+
+    cmd()
+        .arg("--ignore-config")
+        .arg(tmp.path())
+        .arg("--tree")
+        .arg("-L")
+        .assert()
+        .stdout(
+            predicate::str::is_match(
+                "├── link\n│   └── samplefile\n└── one.d\n    └── samplefile\n$",
+            )
+            .unwrap(),
+        );
 }
 
 fn cmd() -> Command {
@@ -535,4 +622,76 @@ fn test_upper_case_ext_icon_match() {
         .arg(test_file)
         .assert()
         .stdout(predicate::str::contains("\u{f410}"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_custom_config_file_parsing() {
+    let dir = tempdir();
+    dir.child("config.yaml").write_str("layout: tree").unwrap();
+    dir.child("folder").create_dir_all().unwrap();
+    dir.child("folder/file").touch().unwrap();
+    let custom_config = dir.path().join("config.yaml");
+
+    cmd()
+        .arg("--config-file")
+        .arg(custom_config)
+        .arg(dir.child("folder").path())
+        .assert()
+        .stdout(predicate::str::is_match("folder\n└── file").unwrap());
+}
+
+#[test]
+fn test_date_custom_format_supports_nanos_with_length() {
+    let dir = tempdir();
+    dir.child("one").touch().unwrap();
+    dir.child("two").touch().unwrap();
+
+    cmd()
+        .arg("-l")
+        .arg("--date")
+        .arg("+testDateFormat%.3f")
+        .arg("--ignore-config")
+        .arg(dir.path())
+        .assert()
+        .stdout(
+            predicate::str::is_match("testDateFormat\\.[0-9]{3}")
+                .unwrap()
+                .count(2),
+        );
+}
+
+#[test]
+fn test_date_custom_format_supports_padding() {
+    let dir = tempdir();
+    dir.child("one").touch().unwrap();
+    dir.child("two").touch().unwrap();
+
+    cmd()
+        .arg("-l")
+        .arg("--date")
+        .arg("+testDateFormat%_d")
+        .arg("--ignore-config")
+        .arg(dir.path())
+        .assert()
+        .stdout(
+            predicate::str::is_match("testDateFormat[\\s0-9]{2}")
+                .unwrap()
+                .count(2),
+        );
+}
+
+#[test]
+fn test_all_directory() {
+    let dir = tempdir();
+    dir.child("one").touch().unwrap();
+    dir.child("two").touch().unwrap();
+
+    cmd()
+        .arg("-a")
+        .arg("-d")
+        .arg("--ignore-config")
+        .arg(dir.path())
+        .assert()
+        .stdout(predicate::str::is_match(".").unwrap());
 }

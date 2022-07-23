@@ -81,25 +81,24 @@ impl FileType {
     }
 
     pub fn is_dirlike(self) -> bool {
-        matches!(self, FileType::Directory { .. } | FileType::SymLink { is_dir: true })
+        matches!(
+            self,
+            FileType::Directory { .. } | FileType::SymLink { is_dir: true }
+        )
     }
 }
 
 impl FileType {
     pub fn render(self, colors: &Colors) -> ColoredString {
         match self {
-            FileType::File { exec, .. } => {
-                colors.colorize(String::from("."), &Elem::File { exec, uid: false })
-            }
-            FileType::Directory { .. } => {
-                colors.colorize(String::from("d"), &Elem::Dir { uid: false })
-            }
-            FileType::Pipe => colors.colorize(String::from("|"), &Elem::Pipe),
-            FileType::SymLink { .. } => colors.colorize(String::from("l"), &Elem::SymLink),
-            FileType::BlockDevice => colors.colorize(String::from("b"), &Elem::BlockDevice),
-            FileType::CharDevice => colors.colorize(String::from("c"), &Elem::CharDevice),
-            FileType::Socket => colors.colorize(String::from("s"), &Elem::Socket),
-            FileType::Special => colors.colorize(String::from("?"), &Elem::Special),
+            FileType::File { exec, .. } => colors.colorize('.', &Elem::File { exec, uid: false }),
+            FileType::Directory { .. } => colors.colorize('d', &Elem::Dir { uid: false }),
+            FileType::Pipe => colors.colorize('|', &Elem::Pipe),
+            FileType::SymLink { .. } => colors.colorize('l', &Elem::SymLink),
+            FileType::BlockDevice => colors.colorize('b', &Elem::BlockDevice),
+            FileType::CharDevice => colors.colorize('c', &Elem::CharDevice),
+            FileType::Socket => colors.colorize('s', &Elem::Socket),
+            FileType::Special => colors.colorize('?', &Elem::Special),
         }
     }
 }
@@ -107,11 +106,11 @@ impl FileType {
 #[cfg(test)]
 mod test {
     use super::FileType;
-    use crate::color::{Colors, Theme};
+    use crate::color::{Colors, ThemeOption};
     use crate::meta::Meta;
     #[cfg(unix)]
     use crate::meta::Permissions;
-    use ansi_term::Colour;
+    use crossterm::style::{Color, Stylize};
     #[cfg(unix)]
     use std::fs::File;
     #[cfg(unix)]
@@ -132,23 +131,28 @@ mod test {
         File::create(&file_path).expect("failed to create file");
         let meta = file_path.metadata().expect("failed to get metas");
 
-        let colors = Colors::new(Theme::NoLscolors);
+        let colors = Colors::new(ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
 
-        assert_eq!(Colour::Fixed(184).paint("."), file_type.render(&colors));
+        assert_eq!(
+            ".".to_string().with(Color::AnsiValue(184)),
+            file_type.render(&colors)
+        );
     }
 
     #[test]
     fn test_dir_type() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let meta = Meta::from_path(&tmp_dir.path().to_path_buf(), false)
-            .expect("failed to get tempdir path");
+        let meta = Meta::from_path(tmp_dir.path(), false).expect("failed to get tempdir path");
         let metadata = tmp_dir.path().metadata().expect("failed to get metas");
 
-        let colors = Colors::new(Theme::NoLscolors);
+        let colors = Colors::new(ThemeOption::NoLscolors);
         let file_type = FileType::new(&metadata, None, &meta.permissions);
 
-        assert_eq!(Colour::Fixed(33).paint("d"), file_type.render(&colors));
+        assert_eq!(
+            "d".to_string().with(Color::AnsiValue(33)),
+            file_type.render(&colors)
+        );
     }
 
     #[test]
@@ -167,10 +171,13 @@ mod test {
             .symlink_metadata()
             .expect("failed to get metas");
 
-        let colors = Colors::new(Theme::NoLscolors);
+        let colors = Colors::new(ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, Some(&meta), &Permissions::from(&meta));
 
-        assert_eq!(Colour::Fixed(44).paint("l"), file_type.render(&colors));
+        assert_eq!(
+            "l".to_string().with(Color::AnsiValue(44)),
+            file_type.render(&colors)
+        );
     }
 
     #[test]
@@ -189,10 +196,13 @@ mod test {
             .symlink_metadata()
             .expect("failed to get metas");
 
-        let colors = Colors::new(Theme::NoLscolors);
+        let colors = Colors::new(ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, Some(&meta), &Permissions::from(&meta));
 
-        assert_eq!(Colour::Fixed(44).paint("l"), file_type.render(&colors));
+        assert_eq!(
+            "l".to_string().with(Color::AnsiValue(44)),
+            file_type.render(&colors)
+        );
     }
 
     #[test]
@@ -207,13 +217,16 @@ mod test {
             .status()
             .expect("failed to exec mkfifo")
             .success();
-        assert_eq!(true, success, "failed to exec mkfifo");
+        assert!(success, "failed to exec mkfifo");
         let meta = pipe_path.metadata().expect("failed to get metas");
 
-        let colors = Colors::new(Theme::NoLscolors);
+        let colors = Colors::new(ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
 
-        assert_eq!(Colour::Fixed(44).paint("|"), file_type.render(&colors));
+        assert_eq!(
+            "|".to_string().with(Color::AnsiValue(44)),
+            file_type.render(&colors)
+        );
     }
 
     #[test]
@@ -232,13 +245,16 @@ mod test {
             .status()
             .expect("failed to exec mknod")
             .success();
-        assert_eq!(true, success, "failed to exec mknod");
+        assert!(success, "failed to exec mknod");
         let meta = char_device_path.metadata().expect("failed to get metas");
 
-        let colors = Colors::new(Theme::NoLscolors);
+        let colors = Colors::new(ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
 
-        assert_eq!(Colour::Fixed(44).paint("c"), file_type.render(&colors));
+        assert_eq!(
+            "c".to_string().with(Color::AnsiValue(44)),
+            file_type.render(&colors)
+        );
     }
 
     #[test]
@@ -251,9 +267,12 @@ mod test {
         UnixListener::bind(&socket_path).expect("failed to create the socket");
         let meta = socket_path.metadata().expect("failed to get metas");
 
-        let colors = Colors::new(Theme::NoLscolors);
+        let colors = Colors::new(ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
 
-        assert_eq!(Colour::Fixed(44).paint("s"), file_type.render(&colors));
+        assert_eq!(
+            "s".to_string().with(Color::AnsiValue(44)),
+            file_type.render(&colors)
+        );
     }
 }

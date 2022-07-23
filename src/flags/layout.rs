@@ -10,11 +10,10 @@ use serde::Deserialize;
 
 /// The flag showing which output layout to print.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "lowercase")]
 pub enum Layout {
     Grid,
     Tree,
-    #[serde(rename = "oneline")]
     OneLine,
 }
 
@@ -31,6 +30,7 @@ impl Configurable<Layout> for Layout {
         } else if matches.is_present("long")
             || matches.is_present("oneline")
             || matches.is_present("inode")
+            || matches.is_present("context")
             || matches!(matches.values_of("blocks"), Some(values) if values.len() > 1)
         // TODO: handle this differently
         {
@@ -67,35 +67,35 @@ mod test {
 
     #[test]
     fn test_from_arg_matches_none() {
-        let argv = vec!["lsd"];
+        let argv = ["lsd"];
         let matches = app::build().get_matches_from_safe(argv).unwrap();
         assert_eq!(None, Layout::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_tree() {
-        let argv = vec!["lsd", "--tree"];
+        let argv = ["lsd", "--tree"];
         let matches = app::build().get_matches_from_safe(argv).unwrap();
         assert_eq!(Some(Layout::Tree), Layout::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_oneline() {
-        let argv = vec!["lsd", "--oneline"];
+        let argv = ["lsd", "--oneline"];
         let matches = app::build().get_matches_from_safe(argv).unwrap();
         assert_eq!(Some(Layout::OneLine), Layout::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_oneline_through_long() {
-        let argv = vec!["lsd", "--long"];
+        let argv = ["lsd", "--long"];
         let matches = app::build().get_matches_from_safe(argv).unwrap();
         assert_eq!(Some(Layout::OneLine), Layout::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_oneline_through_blocks() {
-        let argv = vec!["lsd", "--blocks", "permission,name"];
+        let argv = ["lsd", "--blocks", "permission,name"];
         let matches = app::build().get_matches_from_safe(argv).unwrap();
         assert_eq!(Some(Layout::OneLine), Layout::from_arg_matches(&matches));
     }

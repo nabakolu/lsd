@@ -7,7 +7,6 @@
 
 #[macro_use]
 extern crate clap;
-extern crate ansi_term;
 extern crate chrono;
 extern crate chrono_humanize;
 extern crate dirs;
@@ -18,6 +17,7 @@ extern crate tempfile;
 extern crate term_grid;
 extern crate terminal_size;
 extern crate unicode_width;
+extern crate url;
 extern crate wild;
 extern crate xdg;
 extern crate yaml_rust;
@@ -104,6 +104,12 @@ fn main() {
 
     let config = if matches.is_present("ignore-config") {
         Config::with_none()
+    } else if matches.is_present("config-file") {
+        let path = matches
+            .value_of("config-file")
+            .expect("Invalid config file path");
+
+        Config::from_file(path).expect("Provided file path is invalid")
     } else {
         Config::default()
     };

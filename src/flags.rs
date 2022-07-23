@@ -3,10 +3,13 @@ pub mod color;
 pub mod date;
 pub mod dereference;
 pub mod display;
+pub mod header;
+pub mod hyperlink;
 pub mod icons;
 pub mod ignore_globs;
 pub mod indicators;
 pub mod layout;
+pub mod permission;
 pub mod recursion;
 pub mod size;
 pub mod sorting;
@@ -17,10 +20,12 @@ pub mod total_size;
 pub use blocks::Block;
 pub use blocks::Blocks;
 pub use color::Color;
-pub use color::ColorOption;
+pub use color::{ColorOption, ThemeOption};
 pub use date::DateFlag;
 pub use dereference::Dereference;
 pub use display::Display;
+pub use header::Header;
+pub use hyperlink::HyperlinkOption;
 pub use icons::IconOption;
 pub use icons::IconSeparator;
 pub use icons::IconTheme;
@@ -28,6 +33,7 @@ pub use icons::Icons;
 pub use ignore_globs::IgnoreGlobs;
 pub use indicators::Indicators;
 pub use layout::Layout;
+pub use permission::PermissionFlag;
 pub use recursion::Recursion;
 pub use size::SizeFlag;
 pub use sorting::DirGrouping;
@@ -60,9 +66,12 @@ pub struct Flags {
     pub no_symlink: NoSymlink,
     pub recursion: Recursion,
     pub size: SizeFlag,
+    pub permission: PermissionFlag,
     pub sorting: Sorting,
     pub total_size: TotalSize,
     pub symlink_arrow: SymlinkArrow,
+    pub hyperlink: HyperlinkOption,
+    pub header: Header,
 }
 
 impl Flags {
@@ -81,6 +90,7 @@ impl Flags {
             display: Display::configure_from(matches, config),
             layout: Layout::configure_from(matches, config),
             size: SizeFlag::configure_from(matches, config),
+            permission: PermissionFlag::configure_from(matches, config),
             display_indicators: Indicators::configure_from(matches, config),
             icons: Icons::configure_from(matches, config),
             ignore_globs: IgnoreGlobs::configure_from(matches, config)?,
@@ -89,6 +99,8 @@ impl Flags {
             sorting: Sorting::configure_from(matches, config),
             total_size: TotalSize::configure_from(matches, config),
             symlink_arrow: SymlinkArrow::configure_from(matches, config),
+            hyperlink: HyperlinkOption::configure_from(matches, config),
+            header: Header::configure_from(matches, config),
         })
     }
 }

@@ -1,22 +1,24 @@
-///! This module provides methods to handle the program's config files and operations related to
-///! this.
-use crate::flags::color::ColorOption;
 use crate::flags::display::Display;
 use crate::flags::icons::{IconOption, IconTheme};
 use crate::flags::layout::Layout;
+use crate::flags::permission::PermissionFlag;
 use crate::flags::size::SizeFlag;
 use crate::flags::sorting::{DirGrouping, SortColumn};
+use crate::flags::HyperlinkOption;
+use crate::flags::{ColorOption, ThemeOption};
+///! This module provides methods to handle the program's config files and operations related to
+///! this.
 use crate::print_error;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
 use std::fs;
+use std::io;
 
 const CONF_DIR: &str = "lsd";
-const CONF_FILE_NAME: &str = "config";
-const YAML_LONG_EXT: &str = "yaml";
+const CONF_FILE_NAME: &str = "config.yaml";
 
 /// A struct to hold an optional configuration items, and provides methods
 /// around error handling in a config file.
@@ -36,15 +38,19 @@ pub struct Config {
     pub layout: Option<Layout>,
     pub recursion: Option<Recursion>,
     pub size: Option<SizeFlag>,
+    pub permission: Option<PermissionFlag>,
     pub sorting: Option<Sorting>,
     pub no_symlink: Option<bool>,
     pub total_size: Option<bool>,
     pub symlink_arrow: Option<String>,
+    pub hyperlink: Option<HyperlinkOption>,
+    pub header: Option<bool>,
 }
 
 #[derive(Eq, PartialEq, Debug, Deserialize)]
 pub struct Color {
-    pub when: ColorOption,
+    pub when: Option<ColorOption>,
+    pub theme: Option<ThemeOption>,
 }
 
 #[derive(Eq, PartialEq, Debug, Deserialize)]
@@ -84,28 +90,39 @@ impl Config {
             layout: None,
             recursion: None,
             size: None,
+            permission: None,
             sorting: None,
             no_symlink: None,
             total_size: None,
             symlink_arrow: None,
+            hyperlink: None,
+            header: None,
         }
     }
 
-    /// This constructs a Config struct with a passed file path [String].
-    pub fn from_file(file: String) -> Option<Self> {
-        match fs::read(&file) {
+    /// This constructs a Config struct with a passed file path.
+    pub fn from_file<P: AsRef<Path>>(file: P) -> Option<Self> {
+        let file = file.as_ref();
+        match fs::read(file) {
             Ok(f) => match Self::from_yaml(&String::from_utf8_lossy(&f)) {
                 Ok(c) => Some(c),
                 Err(e) => {
-                    print_error!("Configuration file {} format error, {}.", &file, e);
+                    print_error!(
+                        "Configuration file {} format error, {}.",
+                        file.to_string_lossy(),
+                        e
+                    );
                     None
                 }
             },
             Err(e) => {
-                match e.kind() {
-                    std::io::ErrorKind::NotFound => {}
-                    _ => print_error!("Can not open config file {}: {}.", &file, e),
-                };
+                if e.kind() != io::ErrorKind::NotFound {
+                    print_error!(
+                        "Can not open config file {}: {}.",
+                        file.to_string_lossy(),
+                        e
+                    );
+                }
                 None
             }
         }
@@ -120,38 +137,54 @@ impl Config {
     /// This provides the path for a configuration file, according to the XDG_BASE_DIRS specification.
     /// return None if error like PermissionDenied
     #[cfg(not(windows))]
-    fn config_file_path() -> Option<PathBuf> {
+    pub fn config_file_path() -> Option<PathBuf> {
         use xdg::BaseDirectories;
         match BaseDirectories::with_prefix(CONF_DIR) {
-            Ok(p) => {
-                if let Ok(p) = p.place_config_file([CONF_FILE_NAME, YAML_LONG_EXT].join(".")) {
-                    return Some(p);
-                }
+            Ok(p) => Some(p.get_config_home()),
+            Err(e) => {
+                print_error!("Can not open config file: {}.", e);
+                None
             }
-            Err(e) => print_error!("Can not open config file: {}.", e),
         }
-        None
     }
 
     /// This provides the path for a configuration file, inside the %APPDATA% directory.
     /// return None if error like PermissionDenied
     #[cfg(windows)]
-    fn config_file_path() -> Option<PathBuf> {
-        if let Some(p) = dirs::config_dir() {
-            return Some(
-                p.join(CONF_DIR)
-                    .join(CONF_FILE_NAME)
-                    .with_extension(YAML_LONG_EXT),
-            );
+    pub fn config_file_path() -> Option<PathBuf> {
+        dirs::config_dir().map(|x| x.join(CONF_DIR))
+    }
+
+    /// This expand the `~` in path to HOME dir
+    /// returns the origin one if no `~` found;
+    /// returns None if error happened when getting home dir
+    ///
+    /// Implementing this to reuse the `dirs` dependency, avoid adding new one
+    pub fn expand_home<P: AsRef<Path>>(path: P) -> Option<PathBuf> {
+        let p = path.as_ref();
+        if !p.starts_with("~") {
+            return Some(p.to_path_buf());
         }
-        None
+        if p == Path::new("~") {
+            return dirs::home_dir();
+        }
+        dirs::home_dir().map(|mut h| {
+            if h == Path::new("/") {
+                // Corner case: `h` root directory;
+                // don't prepend extra `/`, just drop the tilde.
+                p.strip_prefix("~").unwrap().to_path_buf()
+            } else {
+                h.push(p.strip_prefix("~/").unwrap());
+                h
+            }
+        })
     }
 }
 
 impl Default for Config {
     fn default() -> Self {
         if let Some(p) = Self::config_file_path() {
-            if let Some(c) = Self::from_file(p.to_string_lossy().to_string()) {
+            if let Some(c) = Self::from_file(p.join(CONF_FILE_NAME)) {
                 return c;
             }
         }
@@ -170,7 +203,7 @@ classic: false
 # == Blocks ==
 # This specifies the columns and their order when using the long and the tree
 # layout.
-# Possible values: permission, user, group, size, size_value, date, name, inode
+# Possible values: permission, user, group, context, size, size_value, date, name, inode
 blocks:
   - permission
   - user
@@ -186,6 +219,13 @@ color:
   # When "classic" is set, this is set to "never".
   # Possible values: never, auto, always
   when: auto
+  # How to colorize the output.
+  # When "classic" is set, this is set to "no-color".
+  # Possible values: default, no-color, no-lscolors, <theme-file-name>
+  # when specifying <theme-file-name>, lsd will look up theme file in
+  # XDG Base Directory if relative
+  # The file path if absolute
+  theme: default
 
 # == Date ==
 # This specifies the date format for the date column. The freeform format
@@ -247,6 +287,11 @@ recursion:
 # Possible values: default, short, bytes
 size: default
 
+# == Permission ==
+# Specify the format of the permission column.
+# Possible value: rwx, octal
+permission: rwx
+
 # == Sorting ==
 sorting:
   # Specify what to sort by.
@@ -270,20 +315,34 @@ no-symlink: false
 # Possible values: false, true
 total-size: false
 
+# == Hyperlink ==
+# Whether to display the total size of directories.
+# Possible values: always, auto, never
+hyperlink: never
+
 # == Symlink arrow ==
 # Specifies how the symlink arrow display, chars in both ascii and utf8
 symlink-arrow: ⇒
 "#;
 
 #[cfg(test)]
+impl Config {
+    pub fn builtin() -> Self {
+        Self::from_yaml(DEFAULT_CONFIG).unwrap()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::Config;
     use crate::config_file;
-    use crate::flags::color::ColorOption;
+    use crate::flags::color::{ColorOption, ThemeOption};
     use crate::flags::icons::{IconOption, IconTheme};
     use crate::flags::layout::Layout;
+    use crate::flags::permission::PermissionFlag;
     use crate::flags::size::SizeFlag;
     use crate::flags::sorting::{DirGrouping, SortColumn};
+    use crate::flags::HyperlinkOption;
 
     #[test]
     fn test_read_default() {
@@ -291,19 +350,17 @@ mod tests {
         assert_eq!(
             Config {
                 classic: Some(false),
-                blocks: Some(
-                    vec![
-                        "permission".into(),
-                        "user".into(),
-                        "group".into(),
-                        "size".into(),
-                        "date".into(),
-                        "name".into(),
-                    ]
-                    .into()
-                ),
+                blocks: Some(vec![
+                    "permission".into(),
+                    "user".into(),
+                    "group".into(),
+                    "size".into(),
+                    "date".into(),
+                    "name".into(),
+                ]),
                 color: Some(config_file::Color {
-                    when: ColorOption::Auto,
+                    when: Some(ColorOption::Auto),
+                    theme: Some(ThemeOption::Default)
                 }),
                 date: None,
                 dereference: Some(false),
@@ -321,6 +378,7 @@ mod tests {
                     depth: None,
                 }),
                 size: Some(SizeFlag::Default),
+                permission: Some(PermissionFlag::Rwx),
                 sorting: Some(config_file::Sorting {
                     column: Some(SortColumn::Name),
                     reverse: Some(false),
@@ -329,6 +387,8 @@ mod tests {
                 no_symlink: Some(false),
                 total_size: Some(false),
                 symlink_arrow: Some("⇒".into()),
+                hyperlink: Some(HyperlinkOption::Never),
+                header: None
             },
             c
         );

@@ -73,6 +73,13 @@ pub fn build() -> App<'static, 'static> {
                 .help("Ignore the configuration file"),
         )
         .arg(
+            Arg::with_name("config-file")
+                .long("config-file")
+                .help("Provide a custom lsd configuration file")
+                .value_name("config-file")
+                .takes_value(true)
+        )
+        .arg(
             Arg::with_name("oneline")
                 .short("1")
                 .long("oneline")
@@ -91,6 +98,7 @@ pub fn build() -> App<'static, 'static> {
             Arg::with_name("human_readable")
                 .short("h")
                 .long("human-readable")
+                .multiple(true)
                 .help("For ls compatibility purposes ONLY, currently set by default"),
         )
         .arg(
@@ -112,11 +120,19 @@ pub fn build() -> App<'static, 'static> {
             Arg::with_name("directory-only")
                 .short("d")
                 .long("directory-only")
-                .conflicts_with("all")
-                .conflicts_with("almost-all")
                 .conflicts_with("depth")
                 .conflicts_with("recursive")
                 .help("Display directories themselves, and not their contents (recursively when used with --tree)"),
+        )
+        .arg(
+            Arg::with_name("permission")
+                .long("permission")
+                .default_value("rwx")
+                .possible_value("rwx")
+                .possible_value("octal")
+                .multiple(true)
+                .number_of_values(1)
+                .help("How to display permissions"),
         )
         .arg(
             Arg::with_name("size")
@@ -152,6 +168,7 @@ pub fn build() -> App<'static, 'static> {
                 .overrides_with("extensionsort")
                 .overrides_with("versionsort")
                 .overrides_with("sort")
+                .overrides_with("no-sort")
                 .multiple(true)
                 .help("Sort by time modified"),
         )
@@ -163,6 +180,7 @@ pub fn build() -> App<'static, 'static> {
                 .overrides_with("extensionsort")
                 .overrides_with("versionsort")
                 .overrides_with("sort")
+                .overrides_with("no-sort")
                 .multiple(true)
                 .help("Sort by size"),
         )
@@ -174,6 +192,7 @@ pub fn build() -> App<'static, 'static> {
                 .overrides_with("timesort")
                 .overrides_with("versionsort")
                 .overrides_with("sort")
+                .overrides_with("no-sort")
                 .multiple(true)
                 .help("Sort by file extension"),
         )
@@ -186,20 +205,34 @@ pub fn build() -> App<'static, 'static> {
                 .overrides_with("sizesort")
                 .overrides_with("extensionsort")
                 .overrides_with("sort")
+                .overrides_with("no-sort")
                 .help("Natural sort of (version) numbers within text"),
         )
         .arg(
             Arg::with_name("sort")
                 .long("sort")
                 .multiple(true)
-                .possible_values(&["size", "time", "version", "extension"])
+                .possible_values(&["size", "time", "version", "extension", "none"])
                 .takes_value(true)
                 .value_name("WORD")
                 .overrides_with("timesort")
                 .overrides_with("sizesort")
                 .overrides_with("extensionsort")
                 .overrides_with("versionsort")
+                .overrides_with("no-sort")
                 .help("sort by WORD instead of name")
+        )
+        .arg(
+            Arg::with_name("no-sort")
+            .short("U")
+            .long("no-sort")
+            .multiple(true)
+            .overrides_with("timesort")
+            .overrides_with("sizesort")
+            .overrides_with("extensionsort")
+            .overrides_with("sort")
+            .overrides_with("versionsort")
+            .help("Do not sort. List entries in directory order")
         )
         .arg(
             Arg::with_name("reverse")
@@ -214,10 +247,14 @@ pub fn build() -> App<'static, 'static> {
                 .possible_value("none")
                 .possible_value("first")
                 .possible_value("last")
-                .default_value("none")
                 .multiple(true)
                 .number_of_values(1)
                 .help("Sort the directories then the files"),
+        )
+        .arg(
+            Arg::with_name("group-directories-first")
+                .long("group-directories-first")
+                .help("Groups the directories at the top before the files. Same as --group-dirs=first")
         )
         .arg(
             Arg::with_name("blocks")
@@ -229,6 +266,7 @@ pub fn build() -> App<'static, 'static> {
                     "permission",
                     "user",
                     "group",
+                    "context",
                     "size",
                     "date",
                     "name",
@@ -239,8 +277,8 @@ pub fn build() -> App<'static, 'static> {
         )
         .arg(
             Arg::with_name("classic")
-            .long("classic")
-            .help("Enable classic mode (no colors or icons)"),
+                .long("classic")
+                .help("Enable classic mode (display output similar to ls)"),
         )
         .arg(
             Arg::with_name("no-symlink")
@@ -272,12 +310,36 @@ pub fn build() -> App<'static, 'static> {
                 .multiple(true)
                 .help("When showing file information for a symbolic link, show information for the file the link references rather than for the link itself"),
         )
+        .arg(
+            Arg::with_name("context")
+                .short("Z")
+                .long("context")
+                .required(false)
+                .takes_value(false)
+                .help("Print security context (label) of each file"),
+        )
+        .arg(
+            Arg::with_name("hyperlink")
+                .long("hyperlink")
+                .possible_value("always")
+                .possible_value("auto")
+                .possible_value("never")
+                .default_value("never")
+                .multiple(true)
+                .number_of_values(1)
+                .help("Attach hyperlink to filenames"),
+        )
+        .arg(
+            Arg::with_name("header")
+                .long("header")
+                .help("Display block headers"),
+        )
 }
 
 fn validate_date_argument(arg: String) -> Result<(), String> {
     if arg.starts_with('+') {
         validate_time_format(&arg)
-    } else if &arg == "date" || &arg == "relative" {
+    } else if arg == "date" || arg == "relative" {
         Result::Ok(())
     } else {
         Result::Err("possible values: date, relative, +date-time-format".to_owned())
@@ -289,14 +351,40 @@ pub fn validate_time_format(formatter: &str) -> Result<(), String> {
     loop {
         match chars.next() {
             Some('%') => match chars.next() {
-                Some('A') | Some('a') | Some('B') | Some('b') | Some('C') | Some('c')
-                | Some('D') | Some('d') | Some('e') | Some('F') | Some('f') | Some('G')
-                | Some('g') | Some('H') | Some('h') | Some('I') | Some('j') | Some('k')
-                | Some('l') | Some('M') | Some('m') | Some('n') | Some('P') | Some('p')
-                | Some('R') | Some('r') | Some('S') | Some('s') | Some('T') | Some('t')
-                | Some('U') | Some('u') | Some('V') | Some('v') | Some('W') | Some('w')
-                | Some('X') | Some('x') | Some('Y') | Some('y') | Some('Z') | Some('z')
-                | Some('+') | Some('%') => (),
+                Some('.') => match chars.next() {
+                    Some('f') => (),
+                    Some(n @ ('3' | '6' | '9')) => match chars.next() {
+                        Some('f') => (),
+                        Some(c) => return Err(format!("invalid format specifier: %.{}{}", n, c)),
+                        None => return Err("missing format specifier".to_owned()),
+                    },
+                    Some(c) => return Err(format!("invalid format specifier: %.{}", c)),
+                    None => return Err("missing format specifier".to_owned()),
+                },
+                Some(n @ (':' | '#')) => match chars.next() {
+                    Some('z') => (),
+                    Some(c) => return Err(format!("invalid format specifier: %{}{}", n, c)),
+                    None => return Err("missing format specifier".to_owned()),
+                },
+                Some(n @ ('-' | '_' | '0')) => match chars.next() {
+                    Some(
+                        'C' | 'd' | 'e' | 'f' | 'G' | 'g' | 'H' | 'I' | 'j' | 'k' | 'l' | 'M' | 'm'
+                        | 'S' | 's' | 'U' | 'u' | 'V' | 'W' | 'w' | 'Y' | 'y',
+                    ) => (),
+                    Some(c) => return Err(format!("invalid format specifier: %{}{}", n, c)),
+                    None => return Err("missing format specifier".to_owned()),
+                },
+                Some(
+                    'A' | 'a' | 'B' | 'b' | 'C' | 'c' | 'D' | 'd' | 'e' | 'F' | 'f' | 'G' | 'g'
+                    | 'H' | 'h' | 'I' | 'j' | 'k' | 'l' | 'M' | 'm' | 'n' | 'P' | 'p' | 'R' | 'r'
+                    | 'S' | 's' | 'T' | 't' | 'U' | 'u' | 'V' | 'v' | 'W' | 'w' | 'X' | 'x' | 'Y'
+                    | 'y' | 'Z' | 'z' | '+' | '%',
+                ) => (),
+                Some(n @ ('3' | '6' | '9')) => match chars.next() {
+                    Some('f') => (),
+                    Some(c) => return Err(format!("invalid format specifier: %{}{}", n, c)),
+                    None => return Err("missing format specifier".to_owned()),
+                },
                 Some(c) => return Err(format!("invalid format specifier: %{}", c)),
                 None => return Err("missing format specifier".to_owned()),
             },

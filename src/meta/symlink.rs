@@ -1,6 +1,5 @@
 use crate::color::{ColoredString, Colors, Elem};
 use crate::flags::Flags;
-use ansi_term::{ANSIString, ANSIStrings};
 use std::fs::read_link;
 use std::path::Path;
 
@@ -10,8 +9,8 @@ pub struct SymLink {
     valid: bool,
 }
 
-impl<'a> From<&'a Path> for SymLink {
-    fn from(path: &'a Path) -> Self {
+impl From<&Path> for SymLink {
+    fn from(path: &Path) -> Self {
         if let Ok(target) = read_link(path) {
             if target.is_absolute() || path.parent() == None {
                 return Self {
@@ -45,11 +44,7 @@ impl<'a> From<&'a Path> for SymLink {
 
 impl SymLink {
     pub fn symlink_string(&self) -> Option<String> {
-        if let Some(ref target) = self.target {
-            Some(target.to_string())
-        } else {
-            None
-        }
+        self.target.as_ref().map(|target| target.to_string())
     }
 
     pub fn render(&self, colors: &Colors, flag: &Flags) -> ColoredString {
@@ -57,18 +52,22 @@ impl SymLink {
             let elem = if self.valid {
                 &Elem::SymLink
             } else {
-                &Elem::BrokenSymLink
+                &Elem::MissingSymLinkTarget
             };
 
             let strings: &[ColoredString] = &[
-                ColoredString::from(format!(" {} ", flag.symlink_arrow)), // ⇒ \u{21d2}
+                ColoredString::new(Colors::default_style(), format!(" {} ", flag.symlink_arrow)), // ⇒ \u{21d2}
                 colors.colorize(target_string, elem),
             ];
 
-            let res = ANSIStrings(strings).to_string();
-            ColoredString::from(res)
+            let res = strings
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+                .join("");
+            ColoredString::new(Colors::default_style(), res)
         } else {
-            ANSIString::from("")
+            ColoredString::new(Colors::default_style(), "".into())
         }
     }
 }
@@ -77,7 +76,7 @@ impl SymLink {
 mod tests {
     use super::SymLink;
     use crate::app;
-    use crate::color::{Colors, Theme};
+    use crate::color::{Colors, ThemeOption};
     use crate::config_file::Config;
     use crate::flags::Flags;
 
@@ -87,12 +86,12 @@ mod tests {
             target: Some("/target".to_string()),
             valid: true,
         };
-        let argv = vec!["lsd"];
+        let argv = ["lsd"];
         let matches = app::build().get_matches_from_safe(argv).unwrap();
         assert_eq!(
             format!("{}", " ⇒ /target"),
             link.render(
-                &Colors::new(Theme::NoColor),
+                &Colors::new(ThemeOption::NoColor),
                 &Flags::configure_from(&matches, &Config::with_none()).unwrap()
             )
             .to_string()
@@ -105,12 +104,30 @@ mod tests {
             target: Some("/target".to_string()),
             valid: false,
         };
-        let argv = vec!["lsd"];
+        let argv = ["lsd"];
         let matches = app::build().get_matches_from_safe(argv).unwrap();
         assert_eq!(
             format!("{}", " ⇒ /target"),
             link.render(
-                &Colors::new(Theme::NoColor),
+                &Colors::new(ThemeOption::NoColor),
+                &Flags::configure_from(&matches, &Config::with_none()).unwrap()
+            )
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn test_symlink_render_default_invalid_target_withcolor() {
+        let link = SymLink {
+            target: Some("/target".to_string()),
+            valid: false,
+        };
+        let argv = ["lsd"];
+        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        assert_eq!(
+            format!("{}", " ⇒ \u{1b}[38;5;124m/target\u{1b}[39m"),
+            link.render(
+                &Colors::new(ThemeOption::NoLscolors),
                 &Flags::configure_from(&matches, &Config::with_none()).unwrap()
             )
             .to_string()

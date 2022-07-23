@@ -1,6 +1,9 @@
-use crate::color::{self, Colors};
+use crate::color::Colors;
 use crate::display;
-use crate::flags::{ColorOption, Display, Flags, IconOption, IconTheme, Layout, SortOrder};
+use crate::flags::{
+    ColorOption, Display, Flags, HyperlinkOption, IconOption, IconTheme, Layout, SortOrder,
+    ThemeOption,
+};
 use crate::icon::{self, Icons};
 use crate::meta::Meta;
 use crate::{print_error, print_output, sort};
@@ -17,13 +20,12 @@ use terminal_size::terminal_size;
 pub struct Core {
     flags: Flags,
     icons: Icons,
-    //display: Display,
     colors: Colors,
     sorters: Vec<(SortOrder, sort::SortFn)>,
 }
 
 impl Core {
-    pub fn new(flags: Flags) -> Self {
+    pub fn new(mut flags: Flags) -> Self {
         // Check through libc if stdout is a tty. Unix specific so not on windows.
         // Determine color output availability (and initialize color output (for Windows 10))
         #[cfg(not(target_os = "windows"))]
@@ -36,13 +38,13 @@ impl Core {
         let tty_available = terminal_size().is_some(); // terminal_size allows us to know if the stdout is a tty or not.
 
         #[cfg(target_os = "windows")]
-        let console_color_ok = ansi_term::enable_ansi_support().is_ok();
+        let console_color_ok = crossterm::ansi_support::supports_ansi();
 
         let mut inner_flags = flags.clone();
 
         let color_theme = match (tty_available && console_color_ok, flags.color.when) {
-            (_, ColorOption::Never) | (false, ColorOption::Auto) => color::Theme::NoColor,
-            _ => color::Theme::Default,
+            (_, ColorOption::Never) | (false, ColorOption::Auto) => ThemeOption::NoColor,
+            _ => flags.color.theme.clone(),
         };
 
         let icon_theme = match (tty_available, flags.icons.when, flags.icons.theme) {
@@ -50,6 +52,16 @@ impl Core {
             (_, _, IconTheme::Fancy) => icon::Theme::Fancy,
             (_, _, IconTheme::Unicode) => icon::Theme::Unicode,
         };
+
+        // TODO: Rework this so that flags passed downstream does not
+        // have Auto option for any (icon, color, hyperlink).
+        if matches!(flags.hyperlink, HyperlinkOption::Auto) {
+            flags.hyperlink = if tty_available {
+                HyperlinkOption::Always
+            } else {
+                HyperlinkOption::Never
+            }
+        }
 
         let icon_separator = flags.icons.separator.0.clone();
 
@@ -65,7 +77,6 @@ impl Core {
 
         Self {
             flags,
-            //display: Display::new(inner_flags),
             colors: Colors::new(color_theme),
             icons: Icons::new(icon_theme, icon_separator),
             sorters,
@@ -113,7 +124,8 @@ impl Core {
                 meta_list.push(meta);
             };
         }
-        if self.flags.total_size.0 {
+        // Only calculate the total size of a directory if it will be displayed
+        if self.flags.total_size.0 && self.flags.blocks.displays_size() {
             for meta in &mut meta_list.iter_mut() {
                 meta.calculate_total_size();
             }
@@ -134,9 +146,9 @@ impl Core {
 
     fn display(&self, metas: &[Meta]) {
         let output = if self.flags.layout == Layout::Tree {
-            display::tree(&metas, &self.flags, &self.colors, &self.icons)
+            display::tree(metas, &self.flags, &self.colors, &self.icons)
         } else {
-            display::grid(&metas, &self.flags, &self.colors, &self.icons)
+            display::grid(metas, &self.flags, &self.colors, &self.icons)
         };
 
         print_output!("{}", output);

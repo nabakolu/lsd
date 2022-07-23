@@ -3,50 +3,72 @@ use crate::flags::{DateFlag, Flags};
 use chrono::{DateTime, Duration, Local};
 use chrono_humanize::HumanTime;
 use std::fs::Metadata;
+use std::panic;
+use std::time::SystemTime;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Date(DateTime<Local>);
+pub enum Date {
+    Date(DateTime<Local>),
+    Invalid,
+}
 
-impl<'a> From<&'a Metadata> for Date {
-    fn from(meta: &'a Metadata) -> Self {
-        let modified_time = meta.modified().expect("failed to retrieve modified date");
+// Note that this is split from the From for Metadata so we can test this one (as we can't mock Metadata)
+impl From<SystemTime> for Date {
+    fn from(systime: SystemTime) -> Self {
+        // FIXME: This should really involve a result, but there's upstream issues in chrono. See https://github.com/chronotope/chrono/issues/110
+        let res = panic::catch_unwind(|| systime.into());
 
-        let time = modified_time.into();
+        if let Ok(time) = res {
+            Date::Date(time)
+        } else {
+            Date::Invalid
+        }
+    }
+}
 
-        Date(time)
+impl From<&Metadata> for Date {
+    fn from(meta: &Metadata) -> Self {
+        meta.modified()
+            .expect("failed to retrieve modified date")
+            .into()
     }
 }
 
 impl Date {
     pub fn render(&self, colors: &Colors, flags: &Flags) -> ColoredString {
         let now = Local::now();
-
-        let elem;
-        if self.0 > now - Duration::hours(1) {
-            elem = &Elem::HourOld;
-        } else if self.0 > now - Duration::days(1) {
-            elem = &Elem::DayOld;
+        let elem = if let Date::Date(val) = self {
+            if *val > now - Duration::hours(1) {
+                Elem::HourOld
+            } else if *val > now - Duration::days(1) {
+                Elem::DayOld
+            } else {
+                Elem::Older
+            }
         } else {
-            elem = &Elem::Older;
-        }
-
-        colors.colorize(self.date_string(&flags), elem)
+            Elem::Older
+        };
+        colors.colorize(self.date_string(flags), &elem)
     }
 
     pub fn date_string(&self, flags: &Flags) -> String {
-        match &flags.date {
-            DateFlag::Date => self.0.format("%c").to_string(),
-            DateFlag::Relative => format!("{}", HumanTime::from(self.0 - Local::now())),
-            DateFlag::ISO => {
-                // 365.2425 * 24 * 60 * 60 = 31556952 seconds per year
-                // 15778476 seconds are 6 months
-                if self.0 > Local::now() - Duration::seconds(15_778_476) {
-                    self.0.format("%m-%d %R").to_string()
-                } else {
-                    self.0.format("%F").to_string()
+        if let Date::Date(val) = self {
+            match &flags.date {
+                DateFlag::Date => val.format("%c").to_string(),
+                DateFlag::Relative => format!("{}", HumanTime::from(*val - Local::now())),
+                DateFlag::Iso => {
+                    // 365.2425 * 24 * 60 * 60 = 31556952 seconds per year
+                    // 15778476 seconds are 6 months
+                    if *val > Local::now() - Duration::seconds(15_778_476) {
+                        val.format("%m-%d %R").to_string()
+                    } else {
+                        val.format("%F").to_string()
+                    }
                 }
+                DateFlag::Formatted(format) => val.format(format).to_string(),
             }
-            DateFlag::Formatted(format) => self.0.format(&format).to_string(),
+        } else {
+            String::from("-")
         }
     }
 }
@@ -54,10 +76,10 @@ impl Date {
 #[cfg(test)]
 mod test {
     use super::Date;
-    use crate::color::{Colors, Theme};
+    use crate::color::{Colors, ThemeOption};
     use crate::flags::{DateFlag, Flags};
-    use ansi_term::Colour;
     use chrono::{DateTime, Duration, Local};
+    use crossterm::style::{Color, Stylize};
     use std::io;
     use std::path::Path;
     use std::process::{Command, ExitStatus};
@@ -109,12 +131,15 @@ mod test {
             .success();
         assert!(success, "failed to exec touch");
 
-        let colors = Colors::new(Theme::Default);
+        let colors = Colors::new(ThemeOption::Default);
         let date = Date::from(&file_path.metadata().unwrap());
         let flags = Flags::default();
 
         assert_eq!(
-            Colour::Fixed(40).paint(creation_date.format("%c").to_string()),
+            creation_date
+                .format("%c")
+                .to_string()
+                .with(Color::AnsiValue(40)),
             date.render(&colors, &flags)
         );
 
@@ -133,12 +158,15 @@ mod test {
             .success();
         assert!(success, "failed to exec touch");
 
-        let colors = Colors::new(Theme::Default);
+        let colors = Colors::new(ThemeOption::Default);
         let date = Date::from(&file_path.metadata().unwrap());
         let flags = Flags::default();
 
         assert_eq!(
-            Colour::Fixed(42).paint(creation_date.format("%c").to_string()),
+            creation_date
+                .format("%c")
+                .to_string()
+                .with(Color::AnsiValue(42)),
             date.render(&colors, &flags)
         );
 
@@ -157,12 +185,15 @@ mod test {
             .success();
         assert!(success, "failed to exec touch");
 
-        let colors = Colors::new(Theme::Default);
+        let colors = Colors::new(ThemeOption::Default);
         let date = Date::from(&file_path.metadata().unwrap());
         let flags = Flags::default();
 
         assert_eq!(
-            Colour::Fixed(36).paint(creation_date.format("%c").to_string()),
+            creation_date
+                .format("%c")
+                .to_string()
+                .with(Color::AnsiValue(36)),
             date.render(&colors, &flags)
         );
 
@@ -181,14 +212,16 @@ mod test {
             .success();
         assert!(success, "failed to exec touch");
 
-        let colors = Colors::new(Theme::Default);
+        let colors = Colors::new(ThemeOption::Default);
         let date = Date::from(&file_path.metadata().unwrap());
 
-        let mut flags = Flags::default();
-        flags.date = DateFlag::Relative;
+        let flags = Flags {
+            date: DateFlag::Relative,
+            ..Default::default()
+        };
 
         assert_eq!(
-            Colour::Fixed(36).paint("2 days ago"),
+            "2 days ago".to_string().with(Color::AnsiValue(36)),
             date.render(&colors, &flags)
         );
 
@@ -204,15 +237,20 @@ mod test {
         let success = cross_platform_touch(&file_path, &creation_date)
             .unwrap()
             .success();
-        assert_eq!(true, success, "failed to exec touch");
+        assert!(success, "failed to exec touch");
 
-        let colors = Colors::new(Theme::Default);
+        let colors = Colors::new(ThemeOption::Default);
         let date = Date::from(&file_path.metadata().unwrap());
 
-        let mut flags = Flags::default();
-        flags.date = DateFlag::Relative;
+        let flags = Flags {
+            date: DateFlag::Relative,
+            ..Default::default()
+        };
 
-        assert_eq!(Colour::Fixed(40).paint("now"), date.render(&colors, &flags));
+        assert_eq!(
+            "now".to_string().with(Color::AnsiValue(40)),
+            date.render(&colors, &flags)
+        );
 
         fs::remove_file(file_path).unwrap();
     }
@@ -226,16 +264,21 @@ mod test {
         let success = cross_platform_touch(&file_path, &creation_date)
             .unwrap()
             .success();
-        assert_eq!(true, success, "failed to exec touch");
+        assert!(success, "failed to exec touch");
 
-        let colors = Colors::new(Theme::Default);
+        let colors = Colors::new(ThemeOption::Default);
         let date = Date::from(&file_path.metadata().unwrap());
 
-        let mut flags = Flags::default();
-        flags.date = DateFlag::ISO;
+        let flags = Flags {
+            date: DateFlag::Iso,
+            ..Default::default()
+        };
 
         assert_eq!(
-            Colour::Fixed(40).paint(creation_date.format("%m-%d %R").to_string()),
+            creation_date
+                .format("%m-%d %R")
+                .to_string()
+                .with(Color::AnsiValue(40)),
             date.render(&colors, &flags)
         );
 
@@ -251,19 +294,46 @@ mod test {
         let success = cross_platform_touch(&file_path, &creation_date)
             .unwrap()
             .success();
-        assert_eq!(true, success, "failed to exec touch");
+        assert!(success, "failed to exec touch");
 
-        let colors = Colors::new(Theme::Default);
+        let colors = Colors::new(ThemeOption::Default);
         let date = Date::from(&file_path.metadata().unwrap());
 
-        let mut flags = Flags::default();
-        flags.date = DateFlag::ISO;
+        let flags = Flags {
+            date: DateFlag::Iso,
+            ..Default::default()
+        };
 
         assert_eq!(
-            Colour::Fixed(36).paint(creation_date.format("%F").to_string()),
+            creation_date
+                .format("%F")
+                .to_string()
+                .with(Color::AnsiValue(36)),
             date.render(&colors, &flags)
         );
 
         fs::remove_file(file_path).unwrap();
+    }
+
+    #[test]
+    #[cfg(all(not(windows), target_arch = "x86_64"))]
+    fn test_bad_date() {
+        // 4437052 is the bad year taken from https://github.com/Peltoche/lsd/issues/529 that we know is both
+        // a) high enough to break chrono
+        // b) not high enough to break SystemTime (as Duration::MAX would)
+        let end_time = std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::new(4437052 * 365 * 24 * 60 * 60, 0);
+        let colors = Colors::new(ThemeOption::Default);
+        let date = Date::from(end_time);
+
+        let flags = Flags {
+            date: DateFlag::Date,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            "-".to_string().with(Color::AnsiValue(36)),
+            date.render(&colors, &flags)
+        );
     }
 }

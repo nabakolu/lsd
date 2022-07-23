@@ -1,6 +1,9 @@
 use crate::color::{ColoredString, Colors, Elem};
+use crate::flags::HyperlinkOption;
 use crate::icon::Icons;
 use crate::meta::filetype::FileType;
+use crate::print_error;
+use crate::url::Url;
 use std::cmp::{Ordering, PartialOrd};
 use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
@@ -96,25 +99,62 @@ impl Name {
         }
     }
 
+    fn hyperlink(&self, name: String, hyperlink: HyperlinkOption) -> String {
+        match hyperlink {
+            HyperlinkOption::Always => {
+                // HyperlinkOption::Auto gets converted to None or Always in core.rs based on tty_available
+                match std::fs::canonicalize(&self.path) {
+                    Ok(rp) => {
+                        if let Ok(url) = Url::from_file_path(&rp) {
+                            // Crossterm does not support hyperlinks as of now
+                            // https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda
+                            format!("\x1B]8;;{}\x1B\x5C{}\x1B]8;;\x1B\x5C", url, name)
+                        } else {
+                            print_error!("{}: unable to form url.", name);
+                            name
+                        }
+                    }
+                    Err(err) => {
+                        // If the error is NotFound, it just means the file is a broken symlink.
+                        // That is not an error, and the user is already warned that the symlink is broken by the colors.
+                        if err.kind() != std::io::ErrorKind::NotFound {
+                            print_error!("{}: {}", name, err);
+                        }
+                        name
+                    }
+                }
+            }
+            _ => name,
+        }
+    }
+
     pub fn render(
         &self,
         colors: &Colors,
         icons: &Icons,
         display_option: &DisplayOption,
+        hyperlink: HyperlinkOption,
     ) -> ColoredString {
         let content = match display_option {
             DisplayOption::FileName => {
-                format!("{}{}", icons.get(self), self.escape(self.file_name()))
+                format!(
+                    "{}{}",
+                    icons.get(self),
+                    self.hyperlink(self.escape(self.file_name()), hyperlink)
+                )
             }
             DisplayOption::Relative { base_path } => format!(
                 "{}{}",
                 icons.get(self),
-                self.escape(&self.relative_path(base_path).to_string_lossy())
+                self.hyperlink(
+                    self.escape(&self.relative_path(base_path).to_string_lossy()),
+                    hyperlink
+                )
             ),
             DisplayOption::None => format!(
                 "{}{}",
                 icons.get(self),
-                self.escape(&self.path.to_string_lossy())
+                self.hyperlink(self.escape(&self.path.to_string_lossy()), hyperlink)
             ),
         };
 
@@ -166,12 +206,14 @@ mod test {
     use super::DisplayOption;
     use super::Name;
     use crate::color::{self, Colors};
+    use crate::flags::HyperlinkOption;
     use crate::icon::{self, Icons};
     use crate::meta::FileType;
     use crate::meta::Meta;
     #[cfg(unix)]
     use crate::meta::Permissions;
-    use ansi_term::Colour;
+    use crate::url::Url;
+    use crossterm::style::{Color, Stylize};
     use std::cmp::Ordering;
     use std::fs::{self, File};
     #[cfg(unix)]
@@ -192,13 +234,18 @@ mod test {
         File::create(&file_path).expect("failed to create file");
         let meta = file_path.metadata().expect("failed to get metas");
 
-        let colors = Colors::new(color::Theme::NoLscolors);
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
         let name = Name::new(&file_path, file_type);
 
         assert_eq!(
-            Colour::Fixed(184).paint(" file.txt"),
-            name.render(&colors, &icons, &DisplayOption::FileName)
+            " file.txt".to_string().with(Color::AnsiValue(184)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never
+            )
         );
     }
 
@@ -207,16 +254,21 @@ mod test {
         let tmp_dir = tempdir().expect("failed to create temp dir");
         let icons = Icons::new(icon::Theme::Fancy, " ".to_string());
 
-        // Chreate the directory
+        // Create the directory
         let dir_path = tmp_dir.path().join("directory");
         fs::create_dir(&dir_path).expect("failed to create the dir");
         let meta = Meta::from_path(&dir_path, false).unwrap();
 
-        let colors = Colors::new(color::Theme::NoLscolors);
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
 
         assert_eq!(
-            Colour::Fixed(33).paint(" directory"),
-            meta.name.render(&colors, &icons, &DisplayOption::FileName)
+            " directory".to_string().with(Color::AnsiValue(33)),
+            meta.name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never
+            )
         );
     }
 
@@ -238,13 +290,18 @@ mod test {
             .expect("failed to get metas");
         let target_meta = symlink_path.metadata().ok();
 
-        let colors = Colors::new(color::Theme::NoLscolors);
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, target_meta.as_ref(), &Permissions::from(&meta));
         let name = Name::new(&symlink_path, file_type);
 
         assert_eq!(
-            Colour::Fixed(44).paint(" target.tmp"),
-            name.render(&colors, &icons, &DisplayOption::FileName)
+            " target.tmp".to_string().with(Color::AnsiValue(44)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never
+            )
         );
     }
 
@@ -266,13 +323,18 @@ mod test {
             .expect("failed to get metas");
         let target_meta = symlink_path.metadata().ok();
 
-        let colors = Colors::new(color::Theme::NoLscolors);
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, target_meta.as_ref(), &Permissions::from(&meta));
         let name = Name::new(&symlink_path, file_type);
 
         assert_eq!(
-            Colour::Fixed(44).paint(" target.d"),
-            name.render(&colors, &icons, &DisplayOption::FileName)
+            " target.d".to_string().with(Color::AnsiValue(44)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never
+            )
         );
     }
 
@@ -289,16 +351,21 @@ mod test {
             .status()
             .expect("failed to exec mkfifo")
             .success();
-        assert_eq!(true, success, "failed to exec mkfifo");
+        assert!(success, "failed to exec mkfifo");
         let meta = pipe_path.metadata().expect("failed to get metas");
 
-        let colors = Colors::new(color::Theme::NoLscolors);
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
         let name = Name::new(&pipe_path, file_type);
 
         assert_eq!(
-            Colour::Fixed(184).paint(" pipe.tmp"),
-            name.render(&colors, &icons, &DisplayOption::FileName)
+            " pipe.tmp".to_string().with(Color::AnsiValue(184)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never
+            )
         );
     }
 
@@ -312,14 +379,50 @@ mod test {
         File::create(&file_path).expect("failed to create file");
         let meta = Meta::from_path(&file_path, false).unwrap();
 
-        let colors = Colors::new(color::Theme::NoColor);
+        let colors = Colors::new(color::ThemeOption::NoColor);
 
         assert_eq!(
             "file.txt",
             meta.name
-                .render(&colors, &icons, &DisplayOption::FileName)
+                .render(
+                    &colors,
+                    &icons,
+                    &DisplayOption::FileName,
+                    HyperlinkOption::Never
+                )
                 .to_string()
-                .as_str()
+        );
+    }
+
+    #[test]
+    fn test_print_hyperlink() {
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        let icons = Icons::new(icon::Theme::NoIcon, " ".to_string());
+
+        // Create the file;
+        let file_path = tmp_dir.path().join("file.txt");
+        File::create(&file_path).expect("failed to create file");
+        let meta = Meta::from_path(&file_path, false).unwrap();
+
+        let colors = Colors::new(color::ThemeOption::NoColor);
+
+        let real_path = std::fs::canonicalize(&file_path).expect("canonicalize");
+        let expected_url = Url::from_file_path(&real_path).expect("absolute path");
+        let expected_text = format!(
+            "\x1B]8;;{}\x1B\x5C{}\x1B]8;;\x1B\x5C",
+            expected_url, "file.txt"
+        );
+
+        assert_eq!(
+            expected_text,
+            meta.name
+                .render(
+                    &colors,
+                    &icons,
+                    &DisplayOption::FileName,
+                    HyperlinkOption::Always
+                )
+                .to_string()
         );
     }
 
@@ -328,7 +431,7 @@ mod test {
         let path = Path::new("some-file.txt");
 
         let name = Name::new(
-            &path,
+            path,
             FileType::File {
                 uid: false,
                 exec: false,
@@ -343,7 +446,7 @@ mod test {
         let path = Path::new(".gitignore");
 
         let name = Name::new(
-            &path,
+            path,
             FileType::File {
                 uid: false,
                 exec: false,
@@ -357,7 +460,7 @@ mod test {
     fn test_order_impl_is_case_insensitive() {
         let path_1 = Path::new("/AAAA");
         let name_1 = Name::new(
-            &path_1,
+            path_1,
             FileType::File {
                 uid: false,
                 exec: false,
@@ -366,7 +469,7 @@ mod test {
 
         let path_2 = Path::new("/aaaa");
         let name_2 = Name::new(
-            &path_2,
+            path_2,
             FileType::File {
                 uid: false,
                 exec: false,
@@ -380,7 +483,7 @@ mod test {
     fn test_partial_order_impl() {
         let path_a = Path::new("/aaaa");
         let name_a = Name::new(
-            &path_a,
+            path_a,
             FileType::File {
                 uid: false,
                 exec: false,
@@ -389,21 +492,21 @@ mod test {
 
         let path_z = Path::new("/zzzz");
         let name_z = Name::new(
-            &path_z,
+            path_z,
             FileType::File {
                 uid: false,
                 exec: false,
             },
         );
 
-        assert_eq!(true, name_a < name_z);
+        assert!(name_a < name_z);
     }
 
     #[test]
     fn test_partial_order_impl_is_case_insensitive() {
         let path_a = Path::new("aaaa");
         let name_a = Name::new(
-            &path_a,
+            path_a,
             FileType::File {
                 uid: false,
                 exec: false,
@@ -412,21 +515,21 @@ mod test {
 
         let path_z = Path::new("ZZZZ");
         let name_z = Name::new(
-            &path_z,
+            path_z,
             FileType::File {
                 uid: false,
                 exec: false,
             },
         );
 
-        assert_eq!(true, name_a < name_z);
+        assert!(name_a < name_z);
     }
 
     #[test]
     fn test_partial_eq_impl() {
         let path_1 = Path::new("aaaa");
         let name_1 = Name::new(
-            &path_1,
+            path_1,
             FileType::File {
                 uid: false,
                 exec: false,
@@ -435,21 +538,21 @@ mod test {
 
         let path_2 = Path::new("aaaa");
         let name_2 = Name::new(
-            &path_2,
+            path_2,
             FileType::File {
                 uid: false,
                 exec: false,
             },
         );
 
-        assert_eq!(true, name_1 == name_2);
+        assert!(name_1 == name_2);
     }
 
     #[test]
     fn test_partial_eq_impl_is_case_insensitive() {
         let path_1 = Path::new("AAAA");
         let name_1 = Name::new(
-            &path_1,
+            path_1,
             FileType::File {
                 uid: false,
                 exec: false,
@@ -458,14 +561,14 @@ mod test {
 
         let path_2 = Path::new("aaaa");
         let name_2 = Name::new(
-            &path_2,
+            path_2,
             FileType::File {
                 uid: false,
                 exec: false,
             },
         );
 
-        assert_eq!(true, name_1 == name_2);
+        assert!(name_1 == name_2);
     }
 
     #[test]
@@ -527,26 +630,38 @@ mod test {
         File::create(&file_path).expect("failed to create file");
         let meta = file_path.metadata().expect("failed to get metas");
 
-        let colors = Colors::new(color::Theme::NoLscolors);
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
         let name = Name::new(&file_path, file_type);
 
         assert_eq!(
-            Colour::Fixed(184).paint(" file\\ttab.txt"),
-            name.render(&colors, &icons, &DisplayOption::FileName)
+            " file\\ttab.txt".to_string().with(Color::AnsiValue(184)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never
+            )
         );
 
         let file_path = tmp_dir.path().join("file\nnewline.txt");
         File::create(&file_path).expect("failed to create file");
         let meta = file_path.metadata().expect("failed to get metas");
 
-        let colors = Colors::new(color::Theme::NoLscolors);
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
         let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
         let name = Name::new(&file_path, file_type);
 
         assert_eq!(
-            Colour::Fixed(184).paint(" file\\nnewline.txt"),
-            name.render(&colors, &icons, &DisplayOption::FileName)
+            " file\\nnewline.txt"
+                .to_string()
+                .with(Color::AnsiValue(184)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never
+            )
         );
     }
 }

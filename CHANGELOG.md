@@ -6,6 +6,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 ### Added
+### Changed
+### Fixed
+- Fix rendering issues in Windows from [meain](https://gitHub.com/meain)
+
+## [0.22.0] - 2022-06-12
+### Added
+- Add support for `--header` from [MichaelAug](https://github.com/MichaelAug)
+- Add support for `--no-sort` `-U` from [MichaelAug](https://github.com/MichaelAug)
+- Add `--group-directories-first` as an alias for `--group-dirs=first` to improve compatibility with `coreutils/ls`
+- Add `--permission` flag to choose permission formatting (rwx, octal) from [meain](https://github.com/meain)
+- Display MAC contexts and MAC and ACL indicators from [mmatous](https://github.com/mmatous)
+- Add `--hyperlink` flag for adding hyperlinks to files from [KSXGitHub](https://github.com/KSXGitHub) and [meain](https://github.com/meain)
+- Add icons for HEIC, PEM and TOML from [Nix](https://github.com/nix6839)
+### Changed
+- Show Docker icon for files with Dockerfile extension [#652](https://github.com/Peltoche/lsd/pull/652) from [TeamTamoad](https://github.com/TeamTamoad)
+### Fixed
+- Support non-bold bright colors [#248](https://github.com/Peltoche/lsd/issues/248) from [meain](https://github.com/meain)
+- Don't automatically dereference symlinks in tree/recursive [#637](https://github.com/Peltoche/lsd/issues/637) from [meain](https://github.com/meain)
+- Removed useless error message when attempting to make a hyperlink for a broken symlink from [KodiCraft](https://github.com/KodiCraft)
+
+## [0.21.0] - 2022-01-16
+### Added
+- Added support for the MISSING / mi= dircolors variable for broken symlink targets.
+- Add support for theme from [zwpaper](https://github.com/zwpaper) [#452](https://github.com/Peltoche/lsd/pull/452)
+- Update theme to support partial themes [zwpaper](https://github.com/zwpaper) [#591](https://github.com/Peltoche/lsd/pull/591)
+- Update minimal rust version to 1.42.0 from [zwpaper](https://github.com/zwpaper) [#534](https://github.com/Peltoche/lsd/issues/534)
+- [`NO_COLOR`](https://no-color.org/) environment variable support from [AnInternetTroll](https://github.com/aninternettroll)
+### Changed
+- Change size to use btyes in classic mode from [meain](https://github.com/meain)
+- Show tree edge before name block or first column if no name block from [zwpaper](https://github.com/zwpaper) [#468](https://github.com/Peltoche/lsd/issues/468)
+- Added icons for Perl modules (.pm) and test scripts (.t)
+- Add `--config-file` flag to read configuration file from a custom location
+- Clarify custom date format for `date` field in configuration file in the README.
+### Fixed
+- Support all `strftime` like formatting [#532](https://github.com/Peltoche/lsd/issues/532)
+
+## [0.20.1] - 2021-03-07
+### Fixed
+- Fix flaky tree --all test from [meain](https://github.com/meain)
+
+## [0.20.0] - 2021-03-07
+### Added
 - Add support for changing the string between icon and name from [Finn Hediger](https://github.com/orangefran) [#363](https://github.com/Peltoche/lsd/issues/363)
 - Add support for `TIME_STYLE` environment variable from [999eagle](https://github.com/999eagle)
 - Add man page from [edneville](https://github.com/edneville)
@@ -13,8 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Not showing `.` and `..` when `--tree` with `--all` from [zwpaper](https://github.com/zwpaper) [#477](https://github.com/Peltoche/lsd/issues/477)
 ### Fixed
 - Fix handling blocks passed without -l in cli from [meain](https://github.com/meain)
-- Fixed sorting of . and .. when used with folder from [meain](https://github.com/meain)
+- Fix sorting of . and .. when used with folder from [meain](https://github.com/meain)
 - Fix arg parsing for flags that allow multiple values from [meain](https://github.com/meain)
+- Fix tests involving config file for sorting from [meain](https://github.com/meain)
 
 ## [0.19.0] - 2020-12-13
 ### Added
@@ -303,7 +346,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Change the component alignement by using term_grid
 
 
-[Unreleased]: https://github.com/Peltoche/lsd/compare/0.19.0...HEAD
+[Unreleased]: https://github.com/Peltoche/lsd/compare/0.22.0...HEAD
+[0.22.0]: https://github.com/Peltoche/lsd/compare/0.21.0...0.22.0
+[0.21.0]: https://github.com/Peltoche/lsd/compare/0.20.1...0.21.0
+[0.20.1]: https://github.com/Peltoche/lsd/compare/0.20.0...0.20.1
+[0.20.0]: https://github.com/Peltoche/lsd/compare/0.19.0...0.20.0
 [0.19.0]: https://github.com/Peltoche/lsd/compare/0.18.0...0.19.0
 [0.18.0]: https://github.com/Peltoche/lsd/compare/0.17.0...0.18.0
 [0.17.0]: https://github.com/Peltoche/lsd/compare/0.16.0...0.17.0
