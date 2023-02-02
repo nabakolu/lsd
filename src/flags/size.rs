@@ -5,14 +5,15 @@ use super::Configurable;
 
 use crate::config_file::Config;
 
-use clap::ArgMatches;
+use clap::{ArgMatches, ValueSource};
 use serde::Deserialize;
 
 /// The flag showing which file size units to use.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum SizeFlag {
     /// The variant to show file size with SI unit prefix and a B for bytes.
+    #[default]
     Default,
     /// The variant to show file size with only the SI unit prefix.
     Short,
@@ -21,17 +22,13 @@ pub enum SizeFlag {
 }
 
 impl SizeFlag {
-    fn from_str(value: &str) -> Option<Self> {
+    fn from_arg_str(value: &str) -> Self {
         match value {
-            "default" => Some(Self::Default),
-            "short" => Some(Self::Short),
-            "bytes" => Some(Self::Bytes),
-            _ => {
-                panic!(
-                    "Size can only be one of default, short or bytes, but got {}.",
-                    value
-                );
-            }
+            "default" => Self::Default,
+            "short" => Self::Short,
+            "bytes" => Self::Bytes,
+            // Invalid value should be handled by `clap` when building an `ArgMatches`
+            other => unreachable!("Invalid value '{other}' for 'size'"),
         }
     }
 }
@@ -43,14 +40,17 @@ impl Configurable<Self> for SizeFlag {
     /// `SizeFlag` variant is returned in a [Some]. If neither of them is passed, this returns
     /// [None].
     fn from_arg_matches(matches: &ArgMatches) -> Option<Self> {
-        if matches.is_present("classic") {
-            return Some(Self::Bytes);
-        } else if matches.occurrences_of("size") > 0 {
-            if let Some(size) = matches.values_of("size")?.last() {
-                return Self::from_str(size);
-            }
+        if matches.get_one("classic") == Some(&true) {
+            Some(Self::Bytes)
+        } else if matches.value_source("size") == Some(ValueSource::CommandLine) {
+            matches
+                .get_many::<String>("size")?
+                .last()
+                .map(String::as_str)
+                .map(Self::from_arg_str)
+        } else {
+            None
         }
-        None
     }
 
     /// Get a potential `SizeFlag` variant from a [Config].
@@ -59,18 +59,11 @@ impl Configurable<Self> for SizeFlag {
     /// this returns the corresponding `SizeFlag` variant in a [Some].
     /// Otherwise this returns [None].
     fn from_config(config: &Config) -> Option<Self> {
-        if let Some(true) = config.classic {
+        if config.classic == Some(true) {
             Some(Self::Bytes)
         } else {
             config.size
         }
-    }
-}
-
-/// The default value for `SizeFlag` is [SizeFlag::Default].
-impl Default for SizeFlag {
-    fn default() -> Self {
-        Self::Default
     }
 }
 
@@ -90,14 +83,14 @@ mod test {
     #[test]
     fn test_from_arg_matches_none() {
         let argv = ["lsd"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(None, SizeFlag::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_default() {
         let argv = ["lsd", "--size", "default"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(SizeFlag::Default),
             SizeFlag::from_arg_matches(&matches)
@@ -106,35 +99,35 @@ mod test {
 
     #[test]
     fn test_from_arg_matches_short() {
-        let args = vec!["lsd", "--size", "short"];
-        let matches = app::build().get_matches_from_safe(args).unwrap();
+        let argv = ["lsd", "--size", "short"];
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(Some(SizeFlag::Short), SizeFlag::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_bytes() {
-        let args = vec!["lsd", "--size", "bytes"];
-        let matches = app::build().get_matches_from_safe(args).unwrap();
+        let argv = ["lsd", "--size", "bytes"];
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(Some(SizeFlag::Bytes), SizeFlag::from_arg_matches(&matches));
     }
 
     #[test]
     #[should_panic]
-    fn test_from_arg_matches_unknonwn() {
-        let args = vec!["lsd", "--size", "unknown"];
-        let _ = app::build().get_matches_from_safe(args).unwrap();
+    fn test_from_arg_matches_unknown() {
+        let argv = ["lsd", "--size", "unknown"];
+        let _ = app::build().try_get_matches_from(argv).unwrap();
     }
     #[test]
     fn test_from_arg_matches_size_multi() {
-        let args = vec!["lsd", "--size", "bytes", "--size", "short"];
-        let matches = app::build().get_matches_from_safe(args).unwrap();
+        let argv = ["lsd", "--size", "bytes", "--size", "short"];
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(Some(SizeFlag::Short), SizeFlag::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_size_classic() {
-        let args = vec!["lsd", "--size", "short", "--classic"];
-        let matches = app::build().get_matches_from_safe(args).unwrap();
+        let argv = ["lsd", "--size", "short", "--classic"];
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(Some(SizeFlag::Bytes), SizeFlag::from_arg_matches(&matches));
     }
 

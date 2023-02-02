@@ -127,6 +127,7 @@ impl Permissions {
         ColoredString::new(Colors::default_style(), res)
     }
 
+    #[cfg(not(windows))]
     pub fn is_executable(&self) -> bool {
         self.user_execute || self.group_execute || self.other_execute
     }
@@ -169,7 +170,7 @@ mod test {
     use tempfile::tempdir;
 
     #[test]
-    pub fn permission_rwx() {
+    fn permission_rwx() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
 
         // Create the file;
@@ -189,7 +190,7 @@ mod test {
     }
 
     #[test]
-    pub fn permission_rwx2() {
+    fn permission_rwx2() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
 
         // Create the file;
@@ -209,7 +210,7 @@ mod test {
     }
 
     #[test]
-    pub fn permission_rwx_sticky() {
+    fn permission_rwx_sticky() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
 
         // Create the file;
@@ -231,7 +232,7 @@ mod test {
     }
 
     #[test]
-    pub fn permission_octal() {
+    fn permission_octal() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
 
         // Create the file;
@@ -252,7 +253,7 @@ mod test {
     }
 
     #[test]
-    pub fn permission_octal2() {
+    fn permission_octal2() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
 
         // Create the file;
@@ -273,7 +274,7 @@ mod test {
     }
 
     #[test]
-    pub fn permission_octal_sticky() {
+    fn permission_octal_sticky() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
 
         // Create the file;

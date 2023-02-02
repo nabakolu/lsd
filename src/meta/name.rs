@@ -78,12 +78,24 @@ impl Name {
             .collect()
     }
 
-    pub fn escape(&self, string: &str) -> String {
+    fn escape(&self, string: &str, should_quote: bool) -> String {
+        let mut name = string.to_string();
+        if should_quote {
+            if name.contains('\\') || name.contains('"') {
+                name = name.replace('\'', "\'\\\'\'");
+                name = format!("\'{}\'", &name);
+            } else if name.contains('\'') {
+                name = format!("\"{}\"", &name);
+            } else if name.contains(' ') || name.contains('$') {
+                name = format!("\'{}\'", &name);
+            }
+        }
+        let string = name;
         if string
             .chars()
             .all(|c| c >= 0x20 as char && c != 0x7f as char)
         {
-            string.to_string()
+            string
         } else {
             let mut chars = String::new();
             for c in string.chars() {
@@ -134,27 +146,28 @@ impl Name {
         icons: &Icons,
         display_option: &DisplayOption,
         hyperlink: HyperlinkOption,
+        quote: bool,
     ) -> ColoredString {
         let content = match display_option {
             DisplayOption::FileName => {
                 format!(
                     "{}{}",
                     icons.get(self),
-                    self.hyperlink(self.escape(self.file_name()), hyperlink)
+                    self.hyperlink(self.escape(self.file_name(), quote), hyperlink)
                 )
             }
             DisplayOption::Relative { base_path } => format!(
                 "{}{}",
                 icons.get(self),
                 self.hyperlink(
-                    self.escape(&self.relative_path(base_path).to_string_lossy()),
+                    self.escape(&self.relative_path(base_path).to_string_lossy(), quote),
                     hyperlink
                 )
             ),
             DisplayOption::None => format!(
                 "{}{}",
                 icons.get(self),
-                self.hyperlink(self.escape(&self.path.to_string_lossy()), hyperlink)
+                self.hyperlink(self.escape(&self.path.to_string_lossy(), quote), hyperlink)
             ),
         };
 
@@ -206,8 +219,8 @@ mod test {
     use super::DisplayOption;
     use super::Name;
     use crate::color::{self, Colors};
-    use crate::flags::HyperlinkOption;
-    use crate::icon::{self, Icons};
+    use crate::flags::{HyperlinkOption, IconOption, IconTheme as FlagTheme};
+    use crate::icon::Icons;
     use crate::meta::FileType;
     use crate::meta::Meta;
     #[cfg(unix)]
@@ -227,7 +240,7 @@ mod test {
     #[cfg(unix)] // Windows uses different default permissions
     fn test_print_file_name() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let icons = Icons::new(icon::Theme::Fancy, " ".to_string());
+        let icons = Icons::new(false, IconOption::Always, FlagTheme::Fancy, " ".to_string());
 
         // Create the file;
         let file_path = tmp_dir.path().join("file.txt");
@@ -244,7 +257,8 @@ mod test {
                 &colors,
                 &icons,
                 &DisplayOption::FileName,
-                HyperlinkOption::Never
+                HyperlinkOption::Never,
+                false,
             )
         );
     }
@@ -252,7 +266,7 @@ mod test {
     #[test]
     fn test_print_dir_name() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let icons = Icons::new(icon::Theme::Fancy, " ".to_string());
+        let icons = &Icons::new(false, IconOption::Always, FlagTheme::Fancy, " ".to_string());
 
         // Create the directory
         let dir_path = tmp_dir.path().join("directory");
@@ -265,9 +279,10 @@ mod test {
             " directory".to_string().with(Color::AnsiValue(33)),
             meta.name.render(
                 &colors,
-                &icons,
+                icons,
                 &DisplayOption::FileName,
-                HyperlinkOption::Never
+                HyperlinkOption::Never,
+                false
             )
         );
     }
@@ -276,7 +291,7 @@ mod test {
     #[cfg(unix)] // Symlinks are hard on Windows
     fn test_print_symlink_name_file() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let icons = Icons::new(icon::Theme::Fancy, " ".to_string());
+        let icons = &Icons::new(false, IconOption::Always, FlagTheme::Fancy, " ".to_string());
 
         // Create the file;
         let file_path = tmp_dir.path().join("file.tmp");
@@ -298,9 +313,10 @@ mod test {
             " target.tmp".to_string().with(Color::AnsiValue(44)),
             name.render(
                 &colors,
-                &icons,
+                icons,
                 &DisplayOption::FileName,
-                HyperlinkOption::Never
+                HyperlinkOption::Never,
+                false
             )
         );
     }
@@ -309,7 +325,7 @@ mod test {
     #[cfg(unix)] // Symlinks are hard on Windows
     fn test_print_symlink_name_dir() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let icons = Icons::new(icon::Theme::Fancy, " ".to_string());
+        let icons = Icons::new(false, IconOption::Always, FlagTheme::Fancy, " ".to_string());
 
         // Create the directory;
         let dir_path = tmp_dir.path().join("tmp.d");
@@ -333,7 +349,8 @@ mod test {
                 &colors,
                 &icons,
                 &DisplayOption::FileName,
-                HyperlinkOption::Never
+                HyperlinkOption::Never,
+                false
             )
         );
     }
@@ -342,7 +359,7 @@ mod test {
     #[cfg(unix)]
     fn test_print_other_type_name() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let icons = Icons::new(icon::Theme::Fancy, " ".to_string());
+        let icons = &Icons::new(false, IconOption::Always, FlagTheme::Fancy, " ".to_string());
 
         // Create the pipe;
         let pipe_path = tmp_dir.path().join("pipe.tmp");
@@ -362,9 +379,10 @@ mod test {
             " pipe.tmp".to_string().with(Color::AnsiValue(184)),
             name.render(
                 &colors,
-                &icons,
+                icons,
                 &DisplayOption::FileName,
-                HyperlinkOption::Never
+                HyperlinkOption::Never,
+                false
             )
         );
     }
@@ -372,7 +390,7 @@ mod test {
     #[test]
     fn test_print_without_icon_or_color() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let icons = Icons::new(icon::Theme::NoIcon, " ".to_string());
+        let icons = Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string());
 
         // Create the file;
         let file_path = tmp_dir.path().join("file.txt");
@@ -388,7 +406,8 @@ mod test {
                     &colors,
                     &icons,
                     &DisplayOption::FileName,
-                    HyperlinkOption::Never
+                    HyperlinkOption::Never,
+                    false
                 )
                 .to_string()
         );
@@ -397,7 +416,7 @@ mod test {
     #[test]
     fn test_print_hyperlink() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let icons = Icons::new(icon::Theme::NoIcon, " ".to_string());
+        let icons = Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string());
 
         // Create the file;
         let file_path = tmp_dir.path().join("file.txt");
@@ -420,7 +439,8 @@ mod test {
                     &colors,
                     &icons,
                     &DisplayOption::FileName,
-                    HyperlinkOption::Always
+                    HyperlinkOption::Always,
+                    false
                 )
                 .to_string()
         );
@@ -623,7 +643,7 @@ mod test {
     #[cfg(unix)]
     fn test_special_chars_in_filename() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
-        let icons = Icons::new(icon::Theme::Fancy, " ".to_string());
+        let icons = Icons::new(false, IconOption::Always, FlagTheme::Fancy, " ".to_string());
 
         // Create the file;
         let file_path = tmp_dir.path().join("file\ttab.txt");
@@ -640,7 +660,67 @@ mod test {
                 &colors,
                 &icons,
                 &DisplayOption::FileName,
-                HyperlinkOption::Never
+                HyperlinkOption::Never,
+                true,
+            )
+        );
+
+        let file_path = tmp_dir.path().join("a$a.txt");
+        File::create(&file_path).expect("failed to create file");
+        let meta = file_path.metadata().expect("failed to get metas");
+
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
+        let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
+        let name = Name::new(&file_path, file_type);
+
+        assert_eq!(
+            " \'a$a.txt\'".to_string().with(Color::AnsiValue(184)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never,
+                true,
+            )
+        );
+
+        let file_path = tmp_dir.path().join("\\.txt");
+        File::create(&file_path).expect("failed to create file");
+        let meta = file_path.metadata().expect("failed to get metas");
+
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
+        let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
+        let name = Name::new(&file_path, file_type);
+
+        assert_eq!(
+            " \'\\.txt\'".to_string().with(Color::AnsiValue(184)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never,
+                true,
+            )
+        );
+
+        let file_path = tmp_dir.path().join("\"\'.txt");
+        File::create(&file_path).expect("failed to create file");
+        let meta = file_path.metadata().expect("failed to get metas");
+
+        let colors = Colors::new(color::ThemeOption::NoLscolors);
+        let file_type = FileType::new(&meta, None, &Permissions::from(&meta));
+        let name = Name::new(&file_path, file_type);
+
+        assert_eq!(
+            " \'\"\'\\\'\'.txt\'"
+                .to_string()
+                .with(Color::AnsiValue(184)),
+            name.render(
+                &colors,
+                &icons,
+                &DisplayOption::FileName,
+                HyperlinkOption::Never,
+                true,
             )
         );
 
@@ -660,7 +740,8 @@ mod test {
                 &colors,
                 &icons,
                 &DisplayOption::FileName,
-                HyperlinkOption::Never
+                HyperlinkOption::Never,
+                true,
             )
         );
     }

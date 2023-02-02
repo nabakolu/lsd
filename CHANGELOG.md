@@ -4,11 +4,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - ReleaseDate
+## [Unreleased]
 ### Added
-### Changed
+- In keeping with the coreutils change, add quotes and escapes for necessary filenames from [merelymyself](https://github.com/merelymyself)
+- Add support for icon theme from [zwpaper](https://github.com/zwpaper)
+- Add icon for kt and kts from [LeeWeeder](https://github.com/LeeWeeder)
+- Add `--system-protected` to include files with the Windows `system` flag set,
+  on other platform the same as `--all` [#752](https://github.com/Peltoche/lsd/issues/752)
+- Add many icons from https://github.com/Peltoche/lsd/issues/764 [@TruncatedDinosour](https://ari-web.xyz/gh)
+
 ### Fixed
-- Fix rendering issues in Windows from [meain](https://gitHub.com/meain)
+- Do not quote filename when piping into another program from [TeamTamoad](https://github.com/TeamTamoad)
+- Respect `hidden` flag on Windows [#752](https://github.com/Peltoche/lsd/issues/752)
+- Do not show every file are `executable` (green) on Windows
+  [#712](https://github.com/Peltoche/lsd/issues/712). Executables will be marked
+  based on the file extension: `exe`, `msi`, `bat` and `ps1`.
+  [`LS_COLORS`](README.md#Colors) can be used to customize.
+- Handle dereference (-L) with broken symlink from [r3dArch](https://github.com/r3dArch)
+- Avoid using Clap's deprecated structs and functions [sudame](https://github.com/sudame)
+
+## [0.23.1] - 2022-09-13
+
+### Fixed
+- Fix tab completion for paths in ZSH from [duhdugg](https://github.com/duhdugg)
+- Fix POSIX-compatible exit status from [duhdugg](https://github.com/duhdugg)
+
+## [0.23.0] - 2022-09-05
+### Added
+- Add icon for Zstandard from [nix6839](https://github.com/nix6839)
+### Changed
+- Reduce the binary size and improve the performance from [sabify](https://github.com/sabify)
+### Fixed
+- Fix rendering issues in Windows from [meain](https://github.com/meain)
 
 ## [0.22.0] - 2022-06-12
 ### Added
@@ -34,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update minimal rust version to 1.42.0 from [zwpaper](https://github.com/zwpaper) [#534](https://github.com/Peltoche/lsd/issues/534)
 - [`NO_COLOR`](https://no-color.org/) environment variable support from [AnInternetTroll](https://github.com/aninternettroll)
 ### Changed
-- Change size to use btyes in classic mode from [meain](https://github.com/meain)
+- Change size to use bytes in classic mode from [meain](https://github.com/meain)
 - Show tree edge before name block or first column if no name block from [zwpaper](https://github.com/zwpaper) [#468](https://github.com/Peltoche/lsd/issues/468)
 - Added icons for Perl modules (.pm) and test scripts (.t)
 - Add `--config-file` flag to read configuration file from a custom location
@@ -87,7 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add more icons for wmv,wma and others from [0jdxt](https://github.com/0jdxt)
 - Add Windows(Scoop) installation instructions from [turtlebasket](https://github.com/turtlebasket)
 - Add opus filetype icon from [nabakolu](https://github.com/nabakolu)
-- Add FreeBSD insallation instructions from [andoriyu](https://github.com/andoriyu)
+- Add FreeBSD installation instructions from [andoriyu](https://github.com/andoriyu)
 
 ### Changed
 - Drop snap support from [zwpaper](https://github.com/zwpaper)
@@ -343,10 +370,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add the '.cfg' icon
 
 ### Changed
-- Change the component alignement by using term_grid
+- Change the component alignment by using term_grid
 
 
-[Unreleased]: https://github.com/Peltoche/lsd/compare/0.22.0...HEAD
+
+[Unreleased]: https://github.com/Peltoche/lsd/compare/0.23.1...HEAD
+[0.23.1]:  https://github.com/Peltoche/lsd/compare/0.23.0...0.23.1
+[0.23.0]: https://github.com/Peltoche/lsd/compare/0.22.0...0.23.0
 [0.22.0]: https://github.com/Peltoche/lsd/compare/0.21.0...0.22.0
 [0.21.0]: https://github.com/Peltoche/lsd/compare/0.20.1...0.21.0
 [0.20.1]: https://github.com/Peltoche/lsd/compare/0.20.0...0.20.1

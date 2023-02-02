@@ -17,7 +17,7 @@ impl Configurable<Self> for Dereference {
     /// If the "dereference" argument is passed, this returns a `Dereference` with value `true` in
     /// a [Some]. Otherwise this returns [None].
     fn from_arg_matches(matches: &ArgMatches) -> Option<Self> {
-        if matches.is_present("dereference") {
+        if matches.get_one("dereference") == Some(&true) {
             Some(Self(true))
         } else {
             None
@@ -29,7 +29,7 @@ impl Configurable<Self> for Dereference {
     /// If the `Config::dereference` has value, this returns its value
     /// as the value of the `Dereference`, in a [Some], Otherwise this returns [None].
     fn from_config(config: &Config) -> Option<Self> {
-        config.dereference.as_ref().map(|deref| Self(*deref))
+        config.dereference.map(Self)
     }
 }
 
@@ -44,14 +44,14 @@ mod test {
     #[test]
     fn test_from_arg_matches_none() {
         let argv = ["lsd"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(None, Dereference::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_true() {
         let argv = ["lsd", "--dereference"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(Dereference(true)),
             Dereference::from_arg_matches(&matches)

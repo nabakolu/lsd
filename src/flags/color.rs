@@ -4,9 +4,8 @@
 use super::Configurable;
 
 use crate::config_file::Config;
-use crate::print_error;
 
-use clap::ArgMatches;
+use clap::{ArgMatches, ValueSource};
 use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
 use std::env;
@@ -34,9 +33,10 @@ impl Color {
 /// ThemeOption could be one of the following:
 /// Custom(*.yaml): use the YAML theme file as theme file
 /// if error happened, use the default theme
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Default)]
 pub enum ThemeOption {
     NoColor,
+    #[default]
     Default,
     #[allow(dead_code)]
     NoLscolors,
@@ -45,24 +45,15 @@ pub enum ThemeOption {
 
 impl ThemeOption {
     fn from_config(config: &Config) -> ThemeOption {
-        if let Some(classic) = config.classic {
-            if classic {
-                return ThemeOption::NoColor;
-            }
+        if config.classic == Some(true) {
+            ThemeOption::NoColor
+        } else {
+            config
+                .color
+                .as_ref()
+                .and_then(|c| c.theme.clone())
+                .unwrap_or_default()
         }
-        if let Some(c) = &config.color {
-            if let Some(t) = &c.theme {
-                return t.clone();
-            }
-        }
-
-        ThemeOption::default()
-    }
-}
-
-impl Default for ThemeOption {
-    fn default() -> Self {
-        ThemeOption::Default
     }
 }
 
@@ -96,28 +87,23 @@ impl<'de> de::Deserialize<'de> for ThemeOption {
 }
 
 /// The flag showing when to use colors in the output.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ColorOption {
     Always,
+    #[default]
     Auto,
     Never,
 }
 
 impl ColorOption {
-    /// Get a Color value from a [String].
-    fn from_str(value: &str) -> Option<Self> {
+    fn from_arg_str(value: &str) -> Self {
         match value {
-            "always" => Some(Self::Always),
-            "auto" => Some(Self::Auto),
-            "never" => Some(Self::Never),
-            _ => {
-                print_error!(
-                    "Config color.when could only be one of auto, always and never, got {}.",
-                    &value
-                );
-                None
-            }
+            "always" => Self::Always,
+            "auto" => Self::Auto,
+            "never" => Self::Never,
+            // Invalid value should be handled by `clap` when building an `ArgMatches`
+            other => unreachable!("Invalid value '{other}' for 'color'"),
         }
     }
 }
@@ -129,14 +115,14 @@ impl Configurable<Self> for ColorOption {
     /// a [Some]. Otherwise if the argument is passed, this returns the variant corresponding to
     /// its parameter in a [Some]. Otherwise this returns [None].
     fn from_arg_matches(matches: &ArgMatches) -> Option<Self> {
-        if matches.is_present("classic") {
+        if matches.get_one("classic") == Some(&true) {
             Some(Self::Never)
-        } else if matches.occurrences_of("color") > 0 {
-            if let Some(color) = matches.values_of("color")?.last() {
-                Self::from_str(color)
-            } else {
-                panic!("Bad color args. This should not be reachable!");
-            }
+        } else if matches.value_source("color") == Some(ValueSource::CommandLine) {
+            matches
+                .get_many::<String>("color")?
+                .last()
+                .map(String::as_str)
+                .map(Self::from_arg_str)
         } else {
             None
         }
@@ -148,14 +134,10 @@ impl Configurable<Self> for ColorOption {
     /// Otherwise if the `Config::color::when` has value and is one of "always", "auto" or "never"
     /// this returns its corresponding variant in a [Some]. Otherwise this returns [None].
     fn from_config(config: &Config) -> Option<Self> {
-        if let Some(true) = config.classic {
-            return Some(Self::Never);
-        }
-
-        if let Some(c) = &config.color {
-            c.when
+        if config.classic == Some(true) {
+            Some(Self::Never)
         } else {
-            None
+            config.color.as_ref().and_then(|c| c.when)
         }
     }
 
@@ -165,13 +147,6 @@ impl Configurable<Self> for ColorOption {
         } else {
             None
         }
-    }
-}
-
-/// The default value for `ColorOption` is [ColorOption::Auto].
-impl Default for ColorOption {
-    fn default() -> Self {
-        Self::Auto
     }
 }
 
@@ -188,14 +163,14 @@ mod test_color_option {
     #[test]
     fn test_from_arg_matches_none() {
         let argv = ["lsd"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(None, ColorOption::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_always() {
         let argv = ["lsd", "--color", "always"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(ColorOption::Always),
             ColorOption::from_arg_matches(&matches)
@@ -205,7 +180,7 @@ mod test_color_option {
     #[test]
     fn test_from_arg_matches_auto() {
         let argv = ["lsd", "--color", "auto"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(ColorOption::Auto),
             ColorOption::from_arg_matches(&matches)
@@ -215,7 +190,7 @@ mod test_color_option {
     #[test]
     fn test_from_arg_matches_never() {
         let argv = ["lsd", "--color", "never"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(ColorOption::Never),
             ColorOption::from_arg_matches(&matches)
@@ -231,7 +206,7 @@ mod test_color_option {
     #[test]
     fn test_from_arg_matches_classic_mode() {
         let argv = ["lsd", "--color", "always", "--classic"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(ColorOption::Never),
             ColorOption::from_arg_matches(&matches)
@@ -241,7 +216,7 @@ mod test_color_option {
     #[test]
     fn test_from_arg_matches_color_multiple() {
         let argv = ["lsd", "--color", "always", "--color", "never"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(ColorOption::Never),
             ColorOption::from_arg_matches(&matches)

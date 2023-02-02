@@ -1,12 +1,8 @@
 ///! This module provides methods to create theme from files and operations related to
 ///! this.
-use crate::config_file;
-use crate::print_error;
-
 use crossterm::style::Color;
 use serde::Deserialize;
-use std::path::Path;
-use std::{fmt, fs};
+use std::fmt;
 
 // Custom color deserialize
 fn deserialize_color<'de, D>(deserializer: D) -> Result<Color, D::Error>
@@ -84,11 +80,11 @@ where
 
 /// A struct holding the theme configuration
 /// Color table: https://upload.wikimedia.org/wikipedia/commons/1/15/Xterm_256color_chart.avg
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
-pub struct Theme {
+pub struct ColorTheme {
     #[serde(deserialize_with = "deserialize_color")]
     pub user: Color,
     #[serde(deserialize_with = "deserialize_color")]
@@ -105,7 +101,7 @@ pub struct Theme {
     pub file_type: FileType,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -128,7 +124,7 @@ pub struct Permission {
     pub context: Color,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -148,7 +144,7 @@ pub struct FileType {
     pub special: Color,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -163,7 +159,7 @@ pub struct File {
     pub no_exec_no_uid: Color,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -174,7 +170,7 @@ pub struct Dir {
     pub no_uid: Color,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -187,7 +183,7 @@ pub struct Symlink {
     pub missing_target: Color,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -200,7 +196,7 @@ pub struct Date {
     pub older: Color,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -215,7 +211,7 @@ pub struct Size {
     pub large: Color,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -226,7 +222,7 @@ pub struct INode {
     pub invalid: Color,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -328,65 +324,16 @@ impl Default for Links {
     }
 }
 
-impl Default for Theme {
+impl Default for ColorTheme {
     fn default() -> Self {
         // TODO(zwpaper): check terminal color and return light or dark
         Self::default_dark()
     }
 }
 
-impl Theme {
-    /// This read theme from file,
-    /// use the file path if it is absolute
-    /// prefix the config_file dir to it if it is not
-    pub fn from_path(file: &str) -> Option<Self> {
-        let real = if let Some(path) = config_file::Config::expand_home(file) {
-            path
-        } else {
-            print_error!("Not a valid theme file path: {}.", &file);
-            return None;
-        };
-        let path = if Path::new(&real).is_absolute() {
-            real
-        } else {
-            config_file::Config::config_file_path()?
-                .join("themes")
-                .join(real)
-        };
-        match fs::read(&path.with_extension("yaml")) {
-            Ok(f) => match Self::with_yaml(&String::from_utf8_lossy(&f)) {
-                Ok(t) => Some(t),
-                Err(e) => {
-                    print_error!("Theme file {} format error: {}.", &file, e);
-                    None
-                }
-            },
-            Err(_) => {
-                // try `yml` if `yaml` extension file not found
-                match fs::read(&path.with_extension("yml")) {
-                    Ok(f) => match Self::with_yaml(&String::from_utf8_lossy(&f)) {
-                        Ok(t) => Some(t),
-                        Err(e) => {
-                            print_error!("Theme file {} format error: {}.", &file, e);
-                            None
-                        }
-                    },
-                    Err(e) => {
-                        print_error!("Not a valid theme: {}, {}.", path.to_string_lossy(), e);
-                        None
-                    }
-                }
-            }
-        }
-    }
-
-    /// This constructs a Theme struct with a passed [Yaml] str.
-    fn with_yaml(yaml: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str::<Self>(yaml)
-    }
-
+impl ColorTheme {
     pub fn default_dark() -> Self {
-        Theme {
+        ColorTheme {
             user: Color::AnsiValue(230),  // Cornsilk1
             group: Color::AnsiValue(187), // LightYellow3
             permission: Permission::default(),
@@ -398,9 +345,14 @@ impl Theme {
             tree_edge: Color::AnsiValue(245), // Grey
         }
     }
+}
 
-    #[cfg(test)]
-    pub fn default_yaml() -> &'static str {
+#[cfg(test)]
+mod tests {
+    use super::ColorTheme;
+    use crate::theme::Theme;
+
+    fn default_yaml() -> &'static str {
         r#"---
 user: 230
 group: 187
@@ -428,17 +380,12 @@ links:
 tree-edge: 245
 "#
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Theme;
 
     #[test]
     fn test_default_theme() {
         assert_eq!(
-            Theme::default_dark(),
-            Theme::with_yaml(Theme::default_yaml()).unwrap()
+            ColorTheme::default_dark(),
+            Theme::with_yaml(default_yaml()).unwrap()
         );
     }
 
@@ -449,10 +396,10 @@ mod tests {
         let dir = assert_fs::TempDir::new().unwrap();
         let theme = dir.path().join("theme.yaml");
         let mut file = File::create(&theme).unwrap();
-        writeln!(file, "{}", Theme::default_yaml()).unwrap();
+        writeln!(file, "{}", default_yaml()).unwrap();
 
         assert_eq!(
-            Theme::default_dark(),
+            ColorTheme::default_dark(),
             Theme::from_path(theme.to_str().unwrap()).unwrap()
         );
     }
@@ -461,8 +408,8 @@ mod tests {
     fn test_empty_theme_return_default() {
         // Must contain one field at least
         // ref https://github.com/dtolnay/serde-yaml/issues/86
-        let empty_theme = Theme::with_yaml("user: 230").unwrap(); // 230 is the default value
-        let default_theme = Theme::default_dark();
+        let empty_theme: ColorTheme = Theme::with_yaml("user: 230").unwrap(); // 230 is the default value
+        let default_theme = ColorTheme::default_dark();
         assert_eq!(empty_theme, default_theme);
     }
 
@@ -470,8 +417,8 @@ mod tests {
     fn test_first_level_theme_return_default_but_changed() {
         // Must contain one field at least
         // ref https://github.com/dtolnay/serde-yaml/issues/86
-        let empty_theme = Theme::with_yaml("user: 130").unwrap();
-        let mut theme = Theme::default_dark();
+        let empty_theme: ColorTheme = Theme::with_yaml("user: 130").unwrap();
+        let mut theme = ColorTheme::default_dark();
         use crossterm::style::Color;
         theme.user = Color::AnsiValue(130);
         assert_eq!(empty_theme, theme);
@@ -481,13 +428,13 @@ mod tests {
     fn test_second_level_theme_return_default_but_changed() {
         // Must contain one field at least
         // ref https://github.com/dtolnay/serde-yaml/issues/86
-        let empty_theme = Theme::with_yaml(
+        let empty_theme: ColorTheme = Theme::with_yaml(
             r#"---
 permission:
   read: 130"#,
         )
         .unwrap();
-        let mut theme = Theme::default_dark();
+        let mut theme = ColorTheme::default_dark();
         use crossterm::style::Color;
         theme.permission.read = Color::AnsiValue(130);
         assert_eq!(empty_theme, theme);

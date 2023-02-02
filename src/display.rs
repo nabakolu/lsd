@@ -289,6 +289,8 @@ fn get_output(
     tree: (usize, &str),
 ) -> Vec<String> {
     let mut strings: Vec<String> = Vec::new();
+    let colorize_missing = |string: &str| colors.colorize(string, &Elem::NoAccess);
+
     for (i, block) in flags.blocks.0.iter().enumerate() {
         let mut block_vec = if Layout::Tree == flags.layout && tree.0 == i {
             vec![colors.colorize(tree.1, &Elem::TreeEdge)]
@@ -297,32 +299,67 @@ fn get_output(
         };
 
         match block {
-            Block::INode => block_vec.push(meta.inode.render(colors)),
-            Block::Links => block_vec.push(meta.links.render(colors)),
+            Block::INode => block_vec.push(match &meta.inode {
+                Some(inode) => inode.render(colors),
+                None => colorize_missing("?"),
+            }),
+            Block::Links => block_vec.push(match &meta.links {
+                Some(links) => links.render(colors),
+                None => colorize_missing("?"),
+            }),
             Block::Permission => {
                 block_vec.extend([
                     meta.file_type.render(colors),
-                    meta.permissions.render(colors, flags),
-                    meta.access_control.render_method(colors),
+                    match meta.permissions {
+                        Some(permissions) => permissions.render(colors, flags),
+                        None => colorize_missing("?????????"),
+                    },
+                    match &meta.access_control {
+                        Some(access_control) => access_control.render_method(colors),
+                        None => colorize_missing(""),
+                    },
                 ]);
             }
-            Block::User => block_vec.push(meta.owner.render_user(colors)),
-            Block::Group => block_vec.push(meta.owner.render_group(colors)),
-            Block::Context => block_vec.push(meta.access_control.render_context(colors)),
+            Block::User => block_vec.push(match &meta.owner {
+                Some(owner) => owner.render_user(colors),
+                None => colorize_missing("?"),
+            }),
+            Block::Group => block_vec.push(match &meta.owner {
+                Some(owner) => owner.render_group(colors),
+                None => colorize_missing("?"),
+            }),
+            Block::Context => block_vec.push(match &meta.access_control {
+                Some(access_control) => access_control.render_context(colors),
+                None => colorize_missing("?"),
+            }),
             Block::Size => {
                 let pad = if Layout::Tree == flags.layout && 0 == tree.0 && 0 == i {
                     None
                 } else {
                     Some(padding_rules[&Block::SizeValue])
                 };
-                block_vec.push(meta.size.render(colors, flags, pad))
+                block_vec.push(match &meta.size {
+                    Some(size) => size.render(colors, flags, pad),
+                    None => colorize_missing("?"),
+                })
             }
-            Block::SizeValue => block_vec.push(meta.size.render_value(colors, flags)),
-            Block::Date => block_vec.push(meta.date.render(colors, flags)),
+            Block::SizeValue => block_vec.push(match &meta.size {
+                Some(size) => size.render_value(colors, flags),
+                None => colorize_missing("?"),
+            }),
+            Block::Date => block_vec.push(match &meta.date {
+                Some(date) => date.render(colors, flags),
+                None => colorize_missing("?"),
+            }),
             Block::Name => {
                 block_vec.extend([
-                    meta.name
-                        .render(colors, icons, display_option, flags.hyperlink),
+                    meta.name.render(
+                        colors,
+                        icons,
+                        display_option,
+                        flags.hyperlink,
+                        flags.should_quote,
+                    ),
                     meta.indicator.render(flags),
                 ]);
                 if !(flags.no_symlink.0 || flags.dereference.0 || flags.layout == Layout::Grid) {
@@ -372,7 +409,10 @@ fn detect_size_lengths(metas: &[Meta], flags: &Flags) -> usize {
     let mut max_value_length: usize = 0;
 
     for meta in metas {
-        let value_len = meta.size.value_string(flags).len();
+        let value_len = match &meta.size {
+            Some(size) => size.value_string(flags).len(),
+            None => 0,
+        };
 
         if value_len > max_value_length {
             max_value_length = value_len;
@@ -408,11 +448,11 @@ mod tests {
     use super::*;
     use crate::color;
     use crate::color::Colors;
-    use crate::flags::HyperlinkOption;
+    use crate::flags::{HyperlinkOption, IconOption, IconTheme as FlagTheme};
     use crate::icon::Icons;
     use crate::meta::{FileType, Name};
     use crate::Config;
-    use crate::{app, flags, icon, sort};
+    use crate::{app, flags, sort};
     use assert_fs::prelude::*;
     use std::path::Path;
 
@@ -423,7 +463,7 @@ mod tests {
             ("ASCII1234-_", 11),
             ("制作样本。", 10),
             ("日本語", 6),
-            ("샘플은 무료로 드리겠습니다", 26),
+            ("샘플은 무료로 드리겠습니다", 28),
             ("👩🐩", 4),
             ("🔬", 2),
         ] {
@@ -438,9 +478,10 @@ mod tests {
             let output = name
                 .render(
                     &Colors::new(color::ThemeOption::NoColor),
-                    &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+                    &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
                     &DisplayOption::FileName,
                     HyperlinkOption::Never,
+                    true,
                 )
                 .to_string();
 
@@ -454,10 +495,10 @@ mod tests {
             // Add 3 characters for the icons.
             ("Ｈｅｌｌｏ,ｗｏｒｌｄ!", 24),
             ("ASCII1234-_", 13),
-            ("File with space", 17),
+            ("File with space", 19),
             ("制作样本。", 12),
             ("日本語", 8),
-            ("샘플은 무료로 드리겠습니다", 28),
+            ("샘플은 무료로 드리겠습니다", 30),
             ("👩🐩", 6),
             ("🔬", 4),
         ] {
@@ -472,9 +513,10 @@ mod tests {
             let output = name
                 .render(
                     &Colors::new(color::ThemeOption::NoColor),
-                    &Icons::new(icon::Theme::Fancy, " ".to_string()),
+                    &Icons::new(false, IconOption::Always, FlagTheme::Fancy, " ".to_string()),
                     &DisplayOption::FileName,
                     HyperlinkOption::Never,
+                    true,
                 )
                 .to_string();
 
@@ -487,10 +529,10 @@ mod tests {
         for (s, l) in [
             ("Ｈｅｌｌｏ,ｗｏｒｌｄ!", 22),
             ("ASCII1234-_", 11),
-            ("File with space", 15),
+            ("File with space", 17),
             ("制作样本。", 10),
             ("日本語", 6),
-            ("샘플은 무료로 드리겠습니다", 26),
+            ("샘플은 무료로 드리겠습니다", 28),
             ("👩🐩", 4),
             ("🔬", 2),
         ] {
@@ -505,9 +547,10 @@ mod tests {
             let output = name
                 .render(
                     &Colors::new(color::ThemeOption::NoLscolors),
-                    &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+                    &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
                     &DisplayOption::FileName,
                     HyperlinkOption::Never,
+                    true,
                 )
                 .to_string();
 
@@ -528,10 +571,10 @@ mod tests {
         for (s, l) in [
             ("Ｈｅｌｌｏ,ｗｏｒｌｄ!", 22),
             ("ASCII1234-_", 11),
-            ("File with space", 15),
+            ("File with space", 17),
             ("制作样本。", 10),
             ("日本語", 6),
-            ("샘플은 무료로 드리겠습니다", 26),
+            ("샘플은 무료로 드리겠습니다", 28),
             ("👩🐩", 4),
             ("🔬", 2),
         ] {
@@ -546,9 +589,10 @@ mod tests {
             let output = name
                 .render(
                     &Colors::new(color::ThemeOption::NoColor),
-                    &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+                    &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
                     &DisplayOption::FileName,
                     HyperlinkOption::Never,
+                    true,
                 )
                 .to_string();
 
@@ -591,7 +635,7 @@ mod tests {
     #[test]
     fn test_display_tree_with_all() {
         let argv = ["lsd", "--tree", "--all"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         let flags = Flags::configure_from(&matches, &Config::with_none()).unwrap();
 
         let dir = assert_fs::TempDir::new().unwrap();
@@ -602,13 +646,14 @@ mod tests {
             .unwrap()
             .recurse_into(42, &flags)
             .unwrap()
+            .0
             .unwrap();
         sort(&mut metas, &sort::assemble_sorters(&flags));
         let output = tree(
             &metas,
             &flags,
             &Colors::new(color::ThemeOption::NoColor),
-            &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+            &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
         );
 
         assert_eq!("one.d\n├── .hidden\n└── two\n", output);
@@ -623,7 +668,7 @@ mod tests {
     #[test]
     fn test_tree_align_subfolder() {
         let argv = ["lsd", "--tree", "--blocks", "size,name"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         let flags = Flags::configure_from(&matches, &Config::with_none()).unwrap();
 
         let dir = assert_fs::TempDir::new().unwrap();
@@ -633,12 +678,13 @@ mod tests {
             .unwrap()
             .recurse_into(42, &flags)
             .unwrap()
+            .0
             .unwrap();
         let output = tree(
             &metas,
             &flags,
             &Colors::new(color::ThemeOption::NoColor),
-            &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+            &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
         );
 
         let length_before_b = |i| -> usize {
@@ -662,7 +708,7 @@ mod tests {
     #[cfg(unix)]
     fn test_tree_size_first_without_name() {
         let argv = ["lsd", "--tree", "--blocks", "size,permission"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         let flags = Flags::configure_from(&matches, &Config::with_none()).unwrap();
 
         let dir = assert_fs::TempDir::new().unwrap();
@@ -672,12 +718,13 @@ mod tests {
             .unwrap()
             .recurse_into(42, &flags)
             .unwrap()
+            .0
             .unwrap();
         let output = tree(
             &metas,
             &flags,
             &Colors::new(color::ThemeOption::NoColor),
-            &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+            &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
         );
 
         assert_eq!(output.lines().nth(1).unwrap().chars().next().unwrap(), '└');
@@ -700,7 +747,7 @@ mod tests {
     #[test]
     fn test_tree_edge_before_name() {
         let argv = ["lsd", "--tree", "--long"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         let flags = Flags::configure_from(&matches, &Config::with_none()).unwrap();
 
         let dir = assert_fs::TempDir::new().unwrap();
@@ -710,12 +757,13 @@ mod tests {
             .unwrap()
             .recurse_into(42, &flags)
             .unwrap()
+            .0
             .unwrap();
         let output = tree(
             &metas,
             &flags,
             &Colors::new(color::ThemeOption::NoColor),
-            &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+            &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
         );
 
         assert!(output.ends_with("└── two\n"));
@@ -729,7 +777,7 @@ mod tests {
             "--blocks",
             "permission,user,group,size,date,name,inode,links",
         ];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         let flags = Flags::configure_from(&matches, &Config::with_none()).unwrap();
 
         let dir = assert_fs::TempDir::new().unwrap();
@@ -739,12 +787,13 @@ mod tests {
             .unwrap()
             .recurse_into(1, &flags)
             .unwrap()
+            .0
             .unwrap();
         let output = grid(
             &metas,
             &flags,
             &Colors::new(color::ThemeOption::NoColor),
-            &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+            &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
         );
 
         dir.close().unwrap();
@@ -762,7 +811,7 @@ mod tests {
     #[test]
     fn test_grid_no_header_with_empty_meta() {
         let argv = ["lsd", "--header", "-l"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         let flags = Flags::configure_from(&matches, &Config::with_none()).unwrap();
 
         let dir = assert_fs::TempDir::new().unwrap();
@@ -771,12 +820,13 @@ mod tests {
             .unwrap()
             .recurse_into(1, &flags)
             .unwrap()
+            .0
             .unwrap();
         let output = grid(
             &metas,
             &flags,
             &Colors::new(color::ThemeOption::NoColor),
-            &Icons::new(icon::Theme::NoIcon, " ".to_string()),
+            &Icons::new(false, IconOption::Never, FlagTheme::Fancy, " ".to_string()),
         );
 
         dir.close().unwrap();

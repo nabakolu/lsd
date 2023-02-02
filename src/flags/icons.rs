@@ -5,7 +5,7 @@ use super::Configurable;
 
 use crate::config_file::Config;
 
-use clap::ArgMatches;
+use clap::{ArgMatches, ValueSource};
 use serde::Deserialize;
 
 /// A collection of flags on how to use icons.
@@ -37,12 +37,25 @@ impl Icons {
 }
 
 /// The flag showing when to use icons in the output.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum IconOption {
     Always,
+    #[default]
     Auto,
     Never,
+}
+
+impl IconOption {
+    fn from_arg_str(value: &str) -> Self {
+        match value {
+            "always" => Self::Always,
+            "auto" => Self::Auto,
+            "never" => Self::Never,
+            // Invalid value should be handled by `clap` when building an `ArgMatches`
+            other => unreachable!("Invalid value '{other}' for 'icon'"),
+        }
+    }
 }
 
 impl Configurable<Self> for IconOption {
@@ -52,15 +65,14 @@ impl Configurable<Self> for IconOption {
     /// a [Some]. Otherwise if the argument is passed, this returns the variant corresponding to
     /// its parameter in a [Some]. Otherwise this returns [None].
     fn from_arg_matches(matches: &ArgMatches) -> Option<Self> {
-        if matches.is_present("classic") {
+        if matches.get_one("classic") == Some(&true) {
             Some(Self::Never)
-        } else if matches.occurrences_of("icon") > 0 {
-            match matches.values_of("icon")?.last() {
-                Some("always") => Some(Self::Always),
-                Some("auto") => Some(Self::Auto),
-                Some("never") => Some(Self::Never),
-                _ => panic!("This should not be reachable!"),
-            }
+        } else if matches.value_source("icon") == Some(ValueSource::CommandLine) {
+            matches
+                .get_many::<String>("icon")?
+                .last()
+                .map(String::as_str)
+                .map(Self::from_arg_str)
         } else {
             None
         }
@@ -73,31 +85,32 @@ impl Configurable<Self> for IconOption {
     /// this returns its corresponding variant in a [Some].
     /// Otherwise this returns [None].
     fn from_config(config: &Config) -> Option<Self> {
-        if let Some(true) = &config.classic {
-            return Some(Self::Never);
-        }
-
-        if let Some(icon) = &config.icons {
-            icon.when
+        if config.classic == Some(true) {
+            Some(Self::Never)
         } else {
-            None
+            config.icons.as_ref().and_then(|icon| icon.when)
         }
-    }
-}
-
-/// The default value for the `IconOption` is [IconOption::Auto].
-impl Default for IconOption {
-    fn default() -> Self {
-        Self::Auto
     }
 }
 
 /// The flag showing which icon theme to use.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum IconTheme {
     Unicode,
+    #[default]
     Fancy,
+}
+
+impl IconTheme {
+    fn from_arg_str(value: &str) -> Self {
+        match value {
+            "fancy" => Self::Fancy,
+            "unicode" => Self::Unicode,
+            // Invalid value should be handled by `clap` when building an `ArgMatches`
+            other => unreachable!("Invalid value '{other}' for 'icon-theme'"),
+        }
+    }
 }
 
 impl Configurable<Self> for IconTheme {
@@ -106,12 +119,12 @@ impl Configurable<Self> for IconTheme {
     /// If the argument is passed, this returns the variant corresponding to its parameter in a
     /// [Some]. Otherwise this returns [None].
     fn from_arg_matches(matches: &ArgMatches) -> Option<Self> {
-        if matches.occurrences_of("icon-theme") > 0 {
-            match matches.values_of("icon-theme")?.last() {
-                Some("fancy") => Some(Self::Fancy),
-                Some("unicode") => Some(Self::Unicode),
-                _ => panic!("This should not be reachable!"),
-            }
+        if matches.value_source("icon-theme") == Some(ValueSource::CommandLine) {
+            matches
+                .get_many::<String>("icon-theme")?
+                .last()
+                .map(String::as_str)
+                .map(Self::from_arg_str)
         } else {
             None
         }
@@ -123,19 +136,7 @@ impl Configurable<Self> for IconTheme {
     /// this returns its corresponding variant in a [Some].
     /// Otherwise this returns [None].
     fn from_config(config: &Config) -> Option<Self> {
-        if let Some(icon) = &config.icons {
-            if let Some(theme) = icon.theme {
-                return Some(theme);
-            }
-        }
-        None
-    }
-}
-
-/// The default value for `IconTheme` is [IconTheme::Fancy].
-impl Default for IconTheme {
-    fn default() -> Self {
-        Self::Fancy
+        config.icons.as_ref().and_then(|icon| icon.theme.clone())
     }
 }
 
@@ -184,14 +185,14 @@ mod test_icon_option {
     #[test]
     fn test_from_arg_matches_none() {
         let argv = ["lsd"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(None, IconOption::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_always() {
         let argv = ["lsd", "--icon", "always"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(IconOption::Always),
             IconOption::from_arg_matches(&matches)
@@ -199,9 +200,9 @@ mod test_icon_option {
     }
 
     #[test]
-    fn test_from_arg_matches_autp() {
+    fn test_from_arg_matches_auto() {
         let argv = ["lsd", "--icon", "auto"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(IconOption::Auto),
             IconOption::from_arg_matches(&matches)
@@ -211,7 +212,7 @@ mod test_icon_option {
     #[test]
     fn test_from_arg_matches_never() {
         let argv = ["lsd", "--icon", "never"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(IconOption::Never),
             IconOption::from_arg_matches(&matches)
@@ -221,7 +222,7 @@ mod test_icon_option {
     #[test]
     fn test_from_arg_matches_classic_mode() {
         let argv = ["lsd", "--icon", "always", "--classic"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(IconOption::Never),
             IconOption::from_arg_matches(&matches)
@@ -231,7 +232,7 @@ mod test_icon_option {
     #[test]
     fn test_from_arg_matches_icon_when_multi() {
         let argv = ["lsd", "--icon", "always", "--icon", "never"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(IconOption::Never),
             IconOption::from_arg_matches(&matches)
@@ -300,14 +301,14 @@ mod test_icon_theme {
     #[test]
     fn test_from_arg_matches_none() {
         let argv = ["lsd"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(None, IconTheme::from_arg_matches(&matches));
     }
 
     #[test]
     fn test_from_arg_matches_fancy() {
         let argv = ["lsd", "--icon-theme", "fancy"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(IconTheme::Fancy),
             IconTheme::from_arg_matches(&matches)
@@ -317,7 +318,7 @@ mod test_icon_theme {
     #[test]
     fn test_from_arg_matches_unicode() {
         let argv = ["lsd", "--icon-theme", "unicode"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(IconTheme::Unicode),
             IconTheme::from_arg_matches(&matches)
@@ -327,7 +328,7 @@ mod test_icon_theme {
     #[test]
     fn test_from_arg_matches_icon_multi() {
         let argv = ["lsd", "--icon-theme", "fancy", "--icon-theme", "unicode"];
-        let matches = app::build().get_matches_from_safe(argv).unwrap();
+        let matches = app::build().try_get_matches_from(argv).unwrap();
         assert_eq!(
             Some(IconTheme::Unicode),
             IconTheme::from_arg_matches(&matches)

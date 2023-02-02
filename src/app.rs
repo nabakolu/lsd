@@ -1,206 +1,212 @@
-use clap::{App, Arg};
+use clap::{Arg, ArgAction, Command, ValueHint};
 
-pub fn build() -> App<'static, 'static> {
-    App::new("lsd")
-        .version(crate_version!())
-        .about(crate_description!())
-        .arg(Arg::with_name("FILE").multiple(true).default_value("."))
+pub fn build() -> Command<'static> {
+    Command::new("lsd")
+        .version(env!("CARGO_PKG_VERSION"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
         .arg(
-            Arg::with_name("all")
-                .short("a")
+            Arg::new("FILE")
+                .action(ArgAction::Append)
+                .multiple_values(true)
+                .default_value(".")
+                .value_hint(ValueHint::AnyPath),
+        )
+        .arg(
+            Arg::new("all")
+                .short('a')
                 .overrides_with("almost-all")
                 .long("all")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Do not ignore entries starting with ."),
         )
         .arg(
-            Arg::with_name("almost-all")
-                .short("A")
+            Arg::new("almost-all")
+                .short('A')
                 .overrides_with("all")
                 .long("almost-all")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Do not list implied . and .."),
         )
         .arg(
-            Arg::with_name("color")
+            Arg::new("color")
                 .long("color")
-                .possible_value("always")
-                .possible_value("auto")
-                .possible_value("never")
+                .value_parser(["always", "auto", "never"])
                 .default_value("auto")
-                .multiple(true)
+                .action(ArgAction::Append)
+                .takes_value(true)
                 .number_of_values(1)
                 .help("When to use terminal colours"),
         )
         .arg(
-            Arg::with_name("icon")
+            Arg::new("icon")
                 .long("icon")
-                .possible_value("always")
-                .possible_value("auto")
-                .possible_value("never")
+                .value_parser(["always", "auto", "never"])
                 .default_value("auto")
-                .multiple(true)
+                .action(ArgAction::Append)
+                .takes_value(true)
                 .number_of_values(1)
                 .help("When to print the icons"),
         )
         .arg(
-            Arg::with_name("icon-theme")
+            Arg::new("icon-theme")
                 .long("icon-theme")
-                .possible_value("fancy")
-                .possible_value("unicode")
                 .default_value("fancy")
-                .multiple(true)
+                .value_parser(["fancy", "unicode"])
+                .action(ArgAction::Append)
+                .takes_value(true)
                 .number_of_values(1)
                 .help("Whether to use fancy or unicode icons"),
         )
         .arg(
-            Arg::with_name("indicators")
-                .short("F")
+            Arg::new("indicators")
+                .short('F')
                 .long("classify")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Append indicator (one of */=>@|) at the end of the file names"),
         )
         .arg(
-            Arg::with_name("long")
-                .short("l")
+            Arg::new("long")
+                .short('l')
                 .long("long")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Display extended file metadata as a table"),
         )
         .arg(
-            Arg::with_name("ignore-config")
+            Arg::new("ignore-config")
                 .long("ignore-config")
+                .action(ArgAction::SetTrue)
                 .help("Ignore the configuration file"),
         )
         .arg(
-            Arg::with_name("config-file")
+            Arg::new("config-file")
                 .long("config-file")
                 .help("Provide a custom lsd configuration file")
                 .value_name("config-file")
                 .takes_value(true)
         )
         .arg(
-            Arg::with_name("oneline")
-                .short("1")
+            Arg::new("oneline")
+                .short('1')
                 .long("oneline")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Display one entry per line"),
         )
         .arg(
-            Arg::with_name("recursive")
-                .short("R")
+            Arg::new("recursive")
+                .short('R')
                 .long("recursive")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .conflicts_with("tree")
                 .help("Recurse into directories"),
         )
         .arg(
-            Arg::with_name("human_readable")
-                .short("h")
+            Arg::new("human_readable")
+                .short('h')
                 .long("human-readable")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("For ls compatibility purposes ONLY, currently set by default"),
         )
         .arg(
-            Arg::with_name("tree")
+            Arg::new("tree")
                 .long("tree")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .conflicts_with("recursive")
                 .help("Recurse into directories and present the result as a tree"),
         )
         .arg(
-            Arg::with_name("depth")
+            Arg::new("depth")
                 .long("depth")
-                .multiple(true)
+                .action(ArgAction::Append)
                 .takes_value(true)
                 .value_name("num")
                 .help("Stop recursing into directories after reaching specified depth"),
         )
         .arg(
-            Arg::with_name("directory-only")
-                .short("d")
+            Arg::new("directory-only")
+                .short('d')
                 .long("directory-only")
+                .action(ArgAction::SetTrue)
                 .conflicts_with("depth")
                 .conflicts_with("recursive")
                 .help("Display directories themselves, and not their contents (recursively when used with --tree)"),
         )
         .arg(
-            Arg::with_name("permission")
+            Arg::new("permission")
                 .long("permission")
                 .default_value("rwx")
-                .possible_value("rwx")
-                .possible_value("octal")
-                .multiple(true)
+                .value_parser(["rwx", "octal"])
+                .action(ArgAction::Append)
+                .takes_value(true)
                 .number_of_values(1)
                 .help("How to display permissions"),
         )
         .arg(
-            Arg::with_name("size")
+            Arg::new("size")
                 .long("size")
-                .possible_value("default")
-                .possible_value("short")
-                .possible_value("bytes")
+                .value_parser(["default", "short", "bytes"])
                 .default_value("default")
-                .multiple(true)
+                .action(ArgAction::Append)
+                .takes_value(true)
                 .number_of_values(1)
                 .help("How to display size"),
         )
         .arg(
-            Arg::with_name("total-size")
+            Arg::new("total-size")
                 .long("total-size")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Display the total size of directories"),
         )
         .arg(
-            Arg::with_name("date")
+            Arg::new("date")
                 .long("date")
-                .validator(validate_date_argument)
+                .value_parser(validate_date_argument)
                 .default_value("date")
-                .multiple(true)
+                .action(ArgAction::Append)
+                .takes_value(true)
                 .number_of_values(1)
                 .help("How to display date [possible values: date, relative, +date-time-format]"),
         )
         .arg(
-            Arg::with_name("timesort")
-                .short("t")
+            Arg::new("timesort")
+                .short('t')
                 .long("timesort")
                 .overrides_with("sizesort")
                 .overrides_with("extensionsort")
                 .overrides_with("versionsort")
                 .overrides_with("sort")
                 .overrides_with("no-sort")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Sort by time modified"),
         )
         .arg(
-            Arg::with_name("sizesort")
-                .short("S")
+            Arg::new("sizesort")
+                .short('S')
                 .long("sizesort")
                 .overrides_with("timesort")
                 .overrides_with("extensionsort")
                 .overrides_with("versionsort")
                 .overrides_with("sort")
                 .overrides_with("no-sort")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Sort by size"),
         )
         .arg(
-            Arg::with_name("extensionsort")
-                .short("X")
+            Arg::new("extensionsort")
+                .short('X')
                 .long("extensionsort")
                 .overrides_with("sizesort")
                 .overrides_with("timesort")
                 .overrides_with("versionsort")
                 .overrides_with("sort")
                 .overrides_with("no-sort")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Sort by file extension"),
         )
         .arg(
-            Arg::with_name("versionsort")
-                .short("v")
+            Arg::new("versionsort")
+                .short('v')
                 .long("versionsort")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .overrides_with("timesort")
                 .overrides_with("sizesort")
                 .overrides_with("extensionsort")
@@ -209,10 +215,10 @@ pub fn build() -> App<'static, 'static> {
                 .help("Natural sort of (version) numbers within text"),
         )
         .arg(
-            Arg::with_name("sort")
+            Arg::new("sort")
                 .long("sort")
-                .multiple(true)
-                .possible_values(&["size", "time", "version", "extension", "none"])
+                .action(ArgAction::Append)
+                .value_parser(["size", "time", "version", "extension", "none"])
                 .takes_value(true)
                 .value_name("WORD")
                 .overrides_with("timesort")
@@ -223,10 +229,10 @@ pub fn build() -> App<'static, 'static> {
                 .help("sort by WORD instead of name")
         )
         .arg(
-            Arg::with_name("no-sort")
-            .short("U")
+            Arg::new("no-sort")
+            .short('U')
             .long("no-sort")
-            .multiple(true)
+            .action(ArgAction::SetTrue)
             .overrides_with("timesort")
             .overrides_with("sizesort")
             .overrides_with("extensionsort")
@@ -235,34 +241,35 @@ pub fn build() -> App<'static, 'static> {
             .help("Do not sort. List entries in directory order")
         )
         .arg(
-            Arg::with_name("reverse")
-                .short("r")
+            Arg::new("reverse")
+                .short('r')
                 .long("reverse")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Reverse the order of the sort"),
         )
         .arg(
-            Arg::with_name("group-dirs")
+            Arg::new("group-dirs")
                 .long("group-dirs")
-                .possible_value("none")
-                .possible_value("first")
-                .possible_value("last")
-                .multiple(true)
+                .value_parser(["none", "first", "last"])
+                .action(ArgAction::Append)
                 .number_of_values(1)
                 .help("Sort the directories then the files"),
         )
         .arg(
-            Arg::with_name("group-directories-first")
+            Arg::new("group-directories-first")
                 .long("group-directories-first")
+                .action(ArgAction::SetTrue)
                 .help("Groups the directories at the top before the files. Same as --group-dirs=first")
         )
         .arg(
-            Arg::with_name("blocks")
+            Arg::new("blocks")
                 .long("blocks")
-                .multiple(true)
-                .number_of_values(1)
-                .require_delimiter(true)
-                .possible_values(&[
+                .action(ArgAction::Append)
+                .multiple_values(true)
+                .takes_value(true)
+                .use_value_delimiter(true)
+                .require_value_delimiter(true)
+                .value_parser([
                     "permission",
                     "user",
                     "group",
@@ -276,77 +283,86 @@ pub fn build() -> App<'static, 'static> {
                 .help("Specify the blocks that will be displayed and in what order"),
         )
         .arg(
-            Arg::with_name("classic")
+            Arg::new("classic")
                 .long("classic")
+                .action(ArgAction::SetTrue)
                 .help("Enable classic mode (display output similar to ls)"),
         )
         .arg(
-            Arg::with_name("no-symlink")
+            Arg::new("no-symlink")
                 .long("no-symlink")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Do not display symlink target"),
         )
         .arg(
-            Arg::with_name("ignore-glob")
-                .short("I")
+            Arg::new("ignore-glob")
+                .short('I')
                 .long("ignore-glob")
-                .multiple(true)
+                .action(ArgAction::Append)
                 .number_of_values(1)
                 .value_name("pattern")
                 .default_value("")
                 .help("Do not display files/directories with names matching the glob pattern(s). More than one can be specified by repeating the argument"),
         )
         .arg(
-            Arg::with_name("inode")
-                .short("i")
+            Arg::new("inode")
+                .short('i')
                 .long("inode")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("Display the index number of each file"),
         )
         .arg(
-            Arg::with_name("dereference")
-                .short("L")
+            Arg::new("dereference")
+                .short('L')
                 .long("dereference")
-                .multiple(true)
+                .action(ArgAction::SetTrue)
                 .help("When showing file information for a symbolic link, show information for the file the link references rather than for the link itself"),
         )
         .arg(
-            Arg::with_name("context")
-                .short("Z")
+            Arg::new("context")
+                .short('Z')
                 .long("context")
                 .required(false)
                 .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Print security context (label) of each file"),
         )
         .arg(
-            Arg::with_name("hyperlink")
+            Arg::new("hyperlink")
                 .long("hyperlink")
-                .possible_value("always")
-                .possible_value("auto")
-                .possible_value("never")
+                .value_parser(["always", "auto", "never"])
                 .default_value("never")
-                .multiple(true)
+                .action(ArgAction::Append)
+                .takes_value(true)
                 .number_of_values(1)
                 .help("Attach hyperlink to filenames"),
         )
         .arg(
-            Arg::with_name("header")
+            Arg::new("header")
                 .long("header")
+                .action(ArgAction::SetTrue)
                 .help("Display block headers"),
+        )
+        .arg(
+            Arg::new("system-protected")
+                .long("system-protected")
+                .action(ArgAction::SetTrue)
+                .help("Includes files with the windows system protection flag set. This is the same as --all on other platforms")
+                .hide(!cfg!(windows)),
         )
 }
 
-fn validate_date_argument(arg: String) -> Result<(), String> {
+fn validate_date_argument(arg: &str) -> Result<String, String> {
     if arg.starts_with('+') {
-        validate_time_format(&arg)
+        validate_time_format(arg)
     } else if arg == "date" || arg == "relative" {
-        Result::Ok(())
+        Result::Ok(arg.to_owned())
     } else {
         Result::Err("possible values: date, relative, +date-time-format".to_owned())
     }
 }
 
-pub fn validate_time_format(formatter: &str) -> Result<(), String> {
+pub fn validate_time_format(formatter: &str) -> Result<String, String> {
     let mut chars = formatter.chars();
     loop {
         match chars.next() {
@@ -392,5 +408,5 @@ pub fn validate_time_format(formatter: &str) -> Result<(), String> {
             _ => continue,
         }
     }
-    Ok(())
+    Ok(formatter.to_owned())
 }
