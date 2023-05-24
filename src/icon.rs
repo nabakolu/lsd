@@ -38,6 +38,7 @@ impl Icons {
                 // Check file types
                 let file_type: FileType = name.file_type();
                 let icon = match file_type {
+                    FileType::Directory { .. } => &t.filetype.dir,
                     FileType::SymLink { is_dir: true } => &t.filetype.symlink_dir,
                     FileType::SymLink { is_dir: false } => &t.filetype.symlink_file,
                     FileType::Socket => &t.filetype.socket,
@@ -55,7 +56,6 @@ impl Icons {
                             icon
                         } else {
                             match file_type {
-                                FileType::Directory { .. } => &t.filetype.dir,
                                 _ => &t.filetype.file,
                             }
                         }
