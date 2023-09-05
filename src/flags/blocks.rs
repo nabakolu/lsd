@@ -1,13 +1,12 @@
-//! This module defines the [Blocks] struct. To set it up from [ArgMatches], a [Config] and its
+//! This module defines the [Blocks] struct. To set it up from [Cli], a [Config] and its
 //! [Default] value, use its [configure_from](Blocks::configure_from) method.
 
 use super::Configurable;
+use crate::app::Cli;
 use crate::config_file::Config;
 use crate::print_error;
 
 use std::convert::TryFrom;
-
-use clap::ArgMatches;
 
 /// A struct to hold a [Vec] of [Block]s and to provide methods to create it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,71 +66,87 @@ impl Blocks {
             None => self.0.insert(0, Block::Context),
         }
     }
+
+    /// Checks whether `self` already contains a [Block] of variant [GitStatus](Block::GitStatus).
+    fn contains_git_status(&self) -> bool {
+        self.0.contains(&Block::GitStatus)
+    }
+
+    /// Put a [Block] of variant [GitStatus](Block::GitStatus) on the left of [GitStatus](Block::Name) to `self`.
+    fn add_git_status(&mut self) {
+        if let Some(position) = self.0.iter().position(|&b| b == Block::Name) {
+            self.0.insert(position, Block::GitStatus);
+        } else {
+            self.0.push(Block::GitStatus);
+        }
+    }
+
+    /// Prepends a [Block] of variant [GitStatus](Block::GitStatus), if `self` does not already contain a
+    /// Block of that variant.
+    fn optional_add_git_status(&mut self) {
+        if !self.contains_git_status() {
+            self.add_git_status()
+        }
+    }
 }
 
 impl Configurable<Self> for Blocks {
-    /// Returns a value from either [ArgMatches], a [Config] or a default value.
+    /// Returns a value from either [Cli], a [Config] or a default value.
     /// Unless the "long" argument is passed, this returns [Default::default]. Otherwise the first
     /// value, that is not [None], is used. The order of precedence for the value used is:
-    /// - [from_arg_matches](Blocks::from_arg_matches)
+    /// - [from_cli](Blocks::from_cli)
     /// - [from_config](Blocks::from_config)
     /// - [long](Blocks::long)
     ///
     /// No matter if the "long" argument was passed, if the "inode" argument is passed and the
     /// `Blocks` does not contain a [Block] of variant [INode](Block::INode) yet, one is prepended
     /// to the returned value.
-    fn configure_from(matches: &ArgMatches, config: &Config) -> Self {
-        let mut blocks = if matches.get_one("long") == Some(&true) {
+    fn configure_from(cli: &Cli, config: &Config) -> Self {
+        let mut blocks = if cli.long {
             Self::long()
         } else {
             Default::default()
         };
 
-        if matches.get_one("long") == Some(&true) {
+        if cli.long {
             if let Some(value) = Self::from_config(config) {
                 blocks = value;
             }
         }
 
-        if let Some(value) = Self::from_arg_matches(matches) {
+        if let Some(value) = Self::from_cli(cli) {
             blocks = value;
         }
 
-        if matches.get_one("context") == Some(&true) {
+        if cli.context {
             blocks.optional_insert_context();
         }
-        if matches.get_one("inode") == Some(&true) {
+        if cli.inode {
             blocks.optional_prepend_inode();
+        }
+
+        if !cfg!(feature = "no-git") && cli.git && cli.long {
+            blocks.optional_add_git_status();
         }
 
         blocks
     }
 
-    /// Get a potential `Blocks` struct from [ArgMatches].
+    /// Get a potential `Blocks` struct from [Cli].
     ///
     /// If the "blocks" argument is passed, then this returns a `Blocks` containing the parameter
-    /// values in a [Some]. Otherwise if the "long" argument is passed, this returns
-    /// [Blocks::long]. Finally if none of the previous happened, this returns [None].
-    fn from_arg_matches(matches: &ArgMatches) -> Option<Self> {
-        if matches.get_many::<String>("blocks")?.len() == 0 {
+    /// values in a [Some]. Otherwise this returns [None].
+    fn from_cli(cli: &Cli) -> Option<Self> {
+        if cli.blocks.is_empty() {
             return None;
         }
 
-        if let Some(values) = matches
-            .get_many::<String>("blocks")
-            .map(|values| values.map(String::as_str))
-        {
-            let mut blocks: Vec<Block> = Vec::with_capacity(values.len());
-            for value in values {
-                blocks.push(Block::try_from(value).unwrap_or_else(|_| {
-                    // Invalid value should be handled by `clap` when building an `ArgMatches`
-                    unreachable!("Invalid value '{value}' for 'blocks'")
-                }));
-            }
-            Some(Self(blocks))
-        } else {
-            None
-        }
+        let blocks = cli
+            .blocks
+            .iter()
+            .map(|b| Block::try_from(b.as_str()).unwrap())
+            .collect();
+        Some(Self(blocks))
     }
 
     /// Get a potential `Blocks` struct from a [Config].
@@ -179,6 +194,7 @@ pub enum Block {
     Name,
     INode,
     Links,
+    GitStatus,
 }
 
 impl Block {
@@ -194,6 +210,7 @@ impl Block {
             Block::SizeValue => "SizeValue",
             Block::Date => "Date Modified",
             Block::Name => "Name",
+            Block::GitStatus => "Git",
         }
     }
 }
@@ -213,6 +230,7 @@ impl TryFrom<&str> for Block {
             "name" => Ok(Self::Name),
             "inode" => Ok(Self::INode),
             "links" => Ok(Self::Links),
+            "git" => Ok(Self::GitStatus),
             _ => Err(format!("Not a valid block name: {string}")),
         }
     }
@@ -220,10 +238,12 @@ impl TryFrom<&str> for Block {
 
 #[cfg(test)]
 mod test_blocks {
+    use clap::Parser;
+
     use super::Block;
     use super::Blocks;
 
-    use crate::app;
+    use crate::app::Cli;
     use crate::config_file::Config;
     use crate::flags::Configurable;
 
@@ -232,8 +252,8 @@ mod test_blocks {
         let argv = ["lsd"];
         let target = Blocks::default();
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
@@ -243,8 +263,8 @@ mod test_blocks {
         let argv = ["lsd", "--long"];
         let target = Blocks::long();
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
@@ -254,8 +274,8 @@ mod test_blocks {
         let argv = ["lsd", "--blocks", "permission"];
         let target = Blocks(vec![Block::Permission]);
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
@@ -265,8 +285,8 @@ mod test_blocks {
         let argv = ["lsd", "--long", "--blocks", "permission"];
         let target = Blocks(vec![Block::Permission]);
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
@@ -276,8 +296,8 @@ mod test_blocks {
         let argv = ["lsd", "--inode"];
         let target = Blocks(vec![Block::INode, Block::Name]);
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
@@ -287,8 +307,8 @@ mod test_blocks {
         let argv = ["lsd", "--blocks", "permission", "--inode"];
         let target = Blocks(vec![Block::INode, Block::Permission]);
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
@@ -298,8 +318,8 @@ mod test_blocks {
         let argv = ["lsd", "--long", "--blocks", "permission", "--inode"];
         let target = Blocks(vec![Block::INode, Block::Permission]);
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
@@ -309,8 +329,8 @@ mod test_blocks {
         let argv = ["lsd", "--blocks", "permission,inode", "--inode"];
         let target = Blocks(vec![Block::Permission, Block::INode]);
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
@@ -320,47 +340,47 @@ mod test_blocks {
         let argv = ["lsd", "--long", "--blocks", "permission,inode", "--inode"];
         let target = Blocks(vec![Block::Permission, Block::INode]);
 
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let result = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let result = Blocks::configure_from(&cli, &Config::with_none());
 
         assert_eq!(result, target);
     }
 
     #[test]
-    fn test_from_arg_matches_none() {
+    fn test_from_cli_none() {
         let argv = ["lsd"];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        assert!(matches!(Blocks::from_arg_matches(&matches), None));
+        let cli = Cli::try_parse_from(argv).unwrap();
+        assert!(matches!(Blocks::from_cli(&cli), None));
     }
 
     #[test]
-    fn test_from_arg_matches_one() {
+    fn test_from_cli_one() {
         let argv = ["lsd", "--blocks", "permission"];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
+        let cli = Cli::try_parse_from(argv).unwrap();
         let test_blocks = Blocks(vec![Block::Permission]);
-        assert_eq!(Blocks::from_arg_matches(&matches), Some(test_blocks));
+        assert_eq!(Blocks::from_cli(&cli), Some(test_blocks));
     }
 
     #[test]
-    fn test_from_arg_matches_multi_occurences() {
+    fn test_from_cli_multi_occurences() {
         let argv = ["lsd", "--blocks", "permission", "--blocks", "name"];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
+        let cli = Cli::try_parse_from(argv).unwrap();
         let test_blocks = Blocks(vec![Block::Permission, Block::Name]);
-        assert_eq!(Blocks::from_arg_matches(&matches), Some(test_blocks));
+        assert_eq!(Blocks::from_cli(&cli), Some(test_blocks));
     }
 
     #[test]
-    fn test_from_arg_matches_multi_values() {
+    fn test_from_cli_multi_values() {
         let argv = ["lsd", "--blocks", "permission,name"];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
+        let cli = Cli::try_parse_from(argv).unwrap();
         let test_blocks = Blocks(vec![Block::Permission, Block::Name]);
-        assert_eq!(Blocks::from_arg_matches(&matches), Some(test_blocks));
+        assert_eq!(Blocks::from_cli(&cli), Some(test_blocks));
     }
 
     #[test]
-    fn test_from_arg_matches_reversed_default() {
+    fn test_from_cli_reversed_default() {
         let argv = ["lsd", "--blocks", "name,date,size,group,user,permission"];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
+        let cli = Cli::try_parse_from(argv).unwrap();
         let test_blocks = Blocks(vec![
             Block::Name,
             Block::Date,
@@ -369,15 +389,39 @@ mod test_blocks {
             Block::User,
             Block::Permission,
         ]);
-        assert_eq!(Blocks::from_arg_matches(&matches), Some(test_blocks));
+        assert_eq!(Blocks::from_cli(&cli), Some(test_blocks));
     }
 
     #[test]
-    fn test_from_arg_matches_every_second_one() {
+    fn test_from_cli_every_second_one() {
         let argv = ["lsd", "--blocks", "permission,group,date"];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
+        let cli = Cli::try_parse_from(argv).unwrap();
         let test_blocks = Blocks(vec![Block::Permission, Block::Group, Block::Date]);
-        assert_eq!(Blocks::from_arg_matches(&matches), Some(test_blocks));
+        assert_eq!(Blocks::from_cli(&cli), Some(test_blocks));
+    }
+
+    #[cfg(not(feature = "no-git"))]
+    #[test]
+    fn test_from_cli_implicit_add_git_block() {
+        let argv = vec![
+            "lsd",
+            "--blocks",
+            "permission,name,group,date",
+            "--git",
+            "--long",
+        ];
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let test_blocks = Blocks(vec![
+            Block::Permission,
+            Block::GitStatus,
+            Block::Name,
+            Block::Group,
+            Block::Date,
+        ]);
+        assert_eq!(
+            Blocks::configure_from(&cli, &Config::with_none()),
+            test_blocks
+        );
     }
 
     #[test]
@@ -436,8 +480,8 @@ mod test_blocks {
     #[test]
     fn test_context_not_present_on_cli() {
         let argv = ["lsd", "--long"];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let parsed_blocks = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let parsed_blocks = Blocks::configure_from(&cli, &Config::with_none());
         let it = parsed_blocks.0.iter();
         assert_eq!(it.filter(|&x| *x == Block::Context).count(), 0);
     }
@@ -445,8 +489,8 @@ mod test_blocks {
     #[test]
     fn test_context_present_if_context_on() {
         let argv = ["lsd", "--context"];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
-        let parsed_blocks = Blocks::configure_from(&matches, &Config::with_none());
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let parsed_blocks = Blocks::configure_from(&cli, &Config::with_none());
         let it = parsed_blocks.0.iter();
         assert_eq!(it.filter(|&x| *x == Block::Context).count(), 1);
     }
@@ -459,7 +503,7 @@ mod test_blocks {
             "--blocks",
             "name,date,size,context,group,user,permission",
         ];
-        let matches = app::build().try_get_matches_from(argv).unwrap();
+        let cli = Cli::try_parse_from(argv).unwrap();
         let test_blocks = Blocks(vec![
             Block::Name,
             Block::Date,
@@ -469,7 +513,7 @@ mod test_blocks {
             Block::User,
             Block::Permission,
         ]);
-        let parsed_blocks = Blocks::from_arg_matches(&matches).unwrap();
+        let parsed_blocks = Blocks::from_cli(&cli).unwrap();
         assert_eq!(test_blocks, parsed_blocks);
     }
 }
@@ -550,5 +594,11 @@ mod test_block {
         assert_eq!(Block::SizeValue.get_header(), "SizeValue");
         assert_eq!(Block::Date.get_header(), "Date Modified");
         assert_eq!(Block::Name.get_header(), "Name");
+        assert_eq!(Block::GitStatus.get_header(), "Git");
+    }
+
+    #[test]
+    fn test_git_status() {
+        assert_eq!(Ok(Block::GitStatus), Block::try_from("git"));
     }
 }

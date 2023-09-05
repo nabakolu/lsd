@@ -6,9 +6,7 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 
-extern crate clap;
-extern crate version_check;
-
+use clap::CommandFactory;
 use clap_complete::generate_to;
 use clap_complete::shells::*;
 use std::fs;
@@ -29,11 +27,22 @@ fn main() {
 
     fs::create_dir_all(&outdir).unwrap();
 
-    let mut app = build();
+    let mut app = Cli::command();
     let bin_name = "lsd";
     generate_to(Bash, &mut app, bin_name, &outdir).expect("Failed to generate Bash completions");
     generate_to(Fish, &mut app, bin_name, &outdir).expect("Failed to generate Fish completions");
     generate_to(Zsh, &mut app, bin_name, &outdir).expect("Failed to generate Zsh completions");
     generate_to(PowerShell, &mut app, bin_name, &outdir)
         .expect("Failed to generate PowerShell completions");
+
+    // Disable git feature for these target where git2 is not well supported
+    if !std::env::var("CARGO_FEATURE_GIT2")
+        .map(|flag| flag == "1")
+        .unwrap_or(false)
+        || std::env::var("TARGET")
+            .map(|target| target == "i686-pc-windows-gnu")
+            .unwrap_or(false)
+    {
+        println!(r#"cargo:rustc-cfg=feature="no-git""#);
+    }
 }
