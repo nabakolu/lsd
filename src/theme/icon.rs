@@ -79,13 +79,13 @@ impl Default for ByType {
         ByType {
             dir: "\u{f115}".into(),          // 
             file: "\u{f016}".into(),         // 
-            pipe: "\u{f731}".into(),         // 
-            socket: "\u{f6a7}".into(),       // 
+            pipe: "\u{f0232}".into(),         // 󰈲
+            socket: "\u{f018a}".into(),       // 󰆨
             //executable: "\u{f489}".into(),   // 
             symlink_dir: "\u{f481}".into(),  // 
             symlink_file: "\u{f481}".into(), // 
             device_char: "\u{e601}".into(),  // 
-            device_block: "\u{fc29}".into(), // ﰩ
+            device_block: "\u{f072b}".into(), // 󰜫
             special: "\u{f2dc}".into(),      // 
         }
     }
